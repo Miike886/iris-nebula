@@ -1,7 +1,13 @@
-import { mkdir, copyFile, cp, rm } from 'node:fs/promises';
+import { access, mkdir, copyFile, cp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const dist = resolve(root, 'dist');
+try {
+  await access(resolve(root, 'Bajo la mirada cinemática.png'));
+} catch {
+  console.error('Falta la foto local: Bajo la mirada cinemática.png. Está excluida de Git; prepara el despliegue desde el equipo que tiene el original con npm run prepare:vercel.');
+  process.exit(1);
+}
 await mkdir(dist, { recursive: true });
 await rm(resolve(dist, 'src/flight.js'), { force: true });
 for (const file of ['index.html', 'Bajo la mirada cinemática.png']) await copyFile(resolve(root, file), resolve(dist, file));
