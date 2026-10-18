@@ -11,7 +11,7 @@ export class Orbit {
   resize(aspect) {
     const fill = aspect < .8 ? .94 : .81;
     const verticalFov = 42 * Math.PI / 180;
-    this.homeDistance = Math.max(23, 16 / (Math.tan(verticalFov / 2) * aspect * fill));
+    this.homeDistance = Math.max(aspect>1.9?32:23, 16 / (Math.tan(verticalFov / 2) * aspect * fill));
   }
   rotate(dx, dy) {
     this.target.yaw = clamp(this.target.yaw - dx * .004, -1.22, 1.22);

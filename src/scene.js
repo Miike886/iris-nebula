@@ -25,8 +25,8 @@ export class IrisScene {
     this.time=0;this.material=INITIAL_MATTER;this.targetMaterial=INITIAL_MATTER;this.hover=0;
     this.frame=0;this.last=0;this.paint=0;this.ready=false;this.suspended=false;
     this.focusIndex=-1;this.focusTarget=0;this.focusUntil=0;
-    this.revealTarget=0;this.signatureTarget=0;this.holdTimer=0;this.holding=false;
-    this.signatureAnchor=new THREE.Vector3(9,-6.8,3);
+    this.revealTarget=0;this.revealPinned=false;this.signatureTarget=1;this.holdTimer=0;this.holding=false;
+    this.signatureAnchor=new THREE.Vector3(7.5,-5.8,3);
     this.hotspots=[new THREE.Vector3(-7.4,-1.65,lensHeight(-7.4,-1.65)+.18),new THREE.Vector3(7.3,-1.65,lensHeight(7.3,-1.65)+.18)];
     this.hotspotElements=[...document.querySelectorAll('[data-focus]')];
     this.bind();this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(canvas);this.resize();
@@ -51,7 +51,7 @@ export class IrisScene {
     this.aspect=crop.height/crop.width;
     this.uniforms={uTime:{value:0},uMatter:{value:INITIAL_MATTER},uHover:{value:0},uPointer:{value:new THREE.Vector3()},uPulse:{value:-100},uHit:{value:new THREE.Vector3()},uFocus:{value:new THREE.Vector3()},uFocusAmount:{value:0},uFocusMode:{value:1},uPhoto:{value:this.photo},uPixelRatio:{value:this.renderer.getPixelRatio()},uHeight:{value:this.height},uLayer:{value:0}};
     this.uniforms.uPhotoHalfHeight={value:16*this.aspect};
-    this.uniforms.uReveal={value:0};this.uniforms.uSignature={value:0};
+    this.uniforms.uReveal={value:0};this.uniforms.uSignature={value:1};
     this.makeSurface();this.makeMatter(crop);this.makeNebula(crop);this.makeStars();this.makeSignature();
     this.ready=true;this.syncCamera();this.renderer.compile(this.scene,this.camera);
     if(this.shaderError)throw new Error('No se pudieron compilar los materiales de la lente.');
@@ -176,23 +176,29 @@ export class IrisScene {
   }
   makeSignature(){
     // The name is sampled into points, then assembled from a small dust cloud.
-    const canvas=document.createElement('canvas');canvas.width=240;canvas.height=90;
-    const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.font='italic 56px Georgia';ctx.fillText('Bere',14,65);
-    const data=ctx.getImageData(0,0,240,90).data,positions=[],scatter=[],seeds=[],random=randomGenerator(725);
+    const canvas=document.createElement('canvas');canvas.width=360;canvas.height=90;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.font='italic 56px Georgia';ctx.fillText('Berenice',16,65);
+    const nameWidth=ctx.measureText('Berenice').width;
+    const data=ctx.getImageData(0,0,360,90).data,positions=[],scatter=[],seeds=[],random=randomGenerator(725);
     const add=(x,y)=>{positions.push(x,y,Math.sin(x)*.08);scatter.push((random()-.5)*8,(random()-.5)*3,(random()-.5)*4);seeds.push(random());};
-    for(let y=0;y<90;y+=2)for(let x=0;x<156;x+=2)if(data[(y*240+x)*4+3]>100)add((x-80)/42,(45-y)/42);
+    for(let y=0;y<90;y+=2)for(let x=0;x<360;x+=2)if(data[(y*360+x)*4+3]>100)add((x-16-nameWidth/2)*5.4/nameWidth,(45-y)/42);
     for(let i=0;i<90;i++){
       const t=i/90*Math.PI*2,x=16*Math.sin(t)**3,y=13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t);
-      add(2.15+x*.023,.04+y*.023);
+      add(3.3+x*.023,.04+y*.023);
     }
     const geometry=this.own(new THREE.BufferGeometry());geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('aScatter',new THREE.Float32BufferAttribute(scatter,3));geometry.setAttribute('aSeed',new THREE.Float32BufferAttribute(seeds,1));
     const material=this.own(new THREE.ShaderMaterial({uniforms:this.uniforms,vertexShader:signatureVertex,fragmentShader:signatureFragment,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
-    this.signature=new THREE.Points(geometry,material);this.signature.position.copy(this.signatureAnchor);this.signature.position.y-=this.mobile?1.8:1.3;if(this.mobile)this.signature.scale.setScalar(1.5);this.signature.renderOrder=4;this.signature.frustumCulled=false;this.scene.add(this.signature);
+    this.signature=new THREE.Points(geometry,material);this.signature.renderOrder=4;this.signature.frustumCulled=false;this.scene.add(this.signature);this.frameSignature();
+  }
+  frameSignature(){
+    const compact=this.height<500;
+    this.signatureAnchor.y=compact?8.7:-5.8;
+    if(this.signature){this.signature.position.copy(this.signatureAnchor);this.signature.position.y-=this.mobile&&!compact?1.8:1.3;this.signature.scale.setScalar(this.mobile&&!compact?1.4:1);}
   }
   resize(){
     const {width,height}=this.canvas.getBoundingClientRect();this.width=width;this.height=height;
     this.camera.aspect=width/Math.max(1,height);this.camera.updateProjectionMatrix();this.orbit.resize(this.camera.aspect);
-    this.renderer.setSize(width,height,false);if(this.uniforms)this.uniforms.uHeight.value=height;this.invalidate();
+    this.renderer.setSize(width,height,false);if(this.uniforms)this.uniforms.uHeight.value=height;this.frameSignature();this.invalidate();
   }
   syncCamera(){
     const p=this.orbit.position;this.camera.position.set(p.x,p.y,p.z);this.camera.lookAt(0,0,0);this.camera.updateMatrixWorld();
@@ -220,10 +226,12 @@ export class IrisScene {
   }
   pulse(point){if(this.paused)return;this.uniforms.uHit.value.copy(point);this.uniforms.uPulse.value=this.time;}
   toggleSignature(){this.signatureTarget=1-this.signatureTarget;this.pulse(this.signatureAnchor);this.invalidate();this.notify();}
-  cancelHold(){clearTimeout(this.holdTimer);this.holdTimer=0;this.holding=false;this.revealTarget=0;this.canvas.classList.remove('revealing');}
+  toggleReveal(){this.revealPinned=!this.revealPinned;this.cancelHold();if(this.revealPinned){this.pointerTarget.copy(this.hotspots[0]);this.hover=1;this.orbit.stop();}this.invalidate();this.notify();}
+  emitWave(){this.pulse(new THREE.Vector3(0,0,2));this.invalidate();}
+  cancelHold(){clearTimeout(this.holdTimer);this.holdTimer=0;this.holding=false;this.revealTarget=this.revealPinned?1:0;this.canvas.classList.toggle('revealing',this.revealPinned);}
   setPaused(value){this.paused=value;if(value)this.orbit.stop();this.invalidate();this.notify();}
-  reset(){this.cancelHold();this.signatureTarget=0;this.orbit.reset();this.targetMaterial=INITIAL_MATTER;this.focusIndex=-1;this.focusTarget=0;this.hover=0;this.pointer.set(5,5);if(this.uniforms)this.uniforms.uPulse.value=-100;this.invalidate();this.notify();}
-  notify(){this.onChange?.({paused:this.paused,material:this.targetMaterial,focus:this.focusIndex,signature:this.signatureTarget===1});}
+  reset(){this.revealPinned=false;this.cancelHold();this.signatureTarget=1;this.orbit.reset();this.targetMaterial=INITIAL_MATTER;this.focusIndex=-1;this.focusTarget=0;this.hover=0;this.pointer.set(5,5);if(this.uniforms)this.uniforms.uPulse.value=-100;this.invalidate();this.notify();}
+  notify(){this.onChange?.({paused:this.paused,material:this.targetMaterial,focus:this.focusIndex,signature:this.signatureTarget===1,reveal:this.revealPinned});}
   clearInput(){this.cancelHold();this.pointers.clear();this.hover=0;this.last=0;this.invalidate();}
   bind(){
     const options={signal:this.controller.signal},c=this.canvas;
@@ -234,14 +242,14 @@ export class IrisScene {
       if(this.pointers.size>1)for(const p of this.pointers.values())p.multi=true;
       pointer(e);this.syncCamera();this.samplePointer();this.invalidate();
       this.cancelHold();
-      if(this.pointers.size===1)this.holdTimer=setTimeout(()=>{if(this.pointers.size===1){this.orbit.stop();this.holding=true;this.revealTarget=1;this.canvas.classList.add('revealing');this.invalidate();}},380);
+      if(this.pointers.size===1&&!this.revealPinned)this.holdTimer=setTimeout(()=>{if(this.pointers.size===1){this.orbit.stop();this.holding=true;this.revealTarget=1;this.canvas.classList.add('revealing');this.invalidate();}},380);
     },options);
     c.addEventListener('pointermove',e=>{
       pointer(e);const old=this.pointers.get(e.pointerId);
       if(old){
         if(!this.holding&&Math.hypot(e.clientX-old.startX,e.clientY-old.startY)>7){clearTimeout(this.holdTimer);this.holdTimer=0;}
         if(this.pointers.size===2){const other=[...this.pointers.entries()].find(([id])=>id!==e.pointerId)[1];const before=Math.hypot(old.x-other.x,old.y-other.y),after=Math.hypot(e.clientX-other.x,e.clientY-other.y);if(before>10&&after>10)this.orbit.zoom(before/after);}
-        else if(!this.holding)this.orbit.rotate(e.clientX-old.x,e.clientY-old.y);
+        else if(!this.holding&&!this.revealPinned)this.orbit.rotate(e.clientX-old.x,e.clientY-old.y);
         Object.assign(old,{x:e.clientX,y:e.clientY});
       }
       this.samplePointer();this.invalidate();
@@ -267,7 +275,7 @@ export class IrisScene {
       if(k==='arrowleft')this.orbit.rotate(25,0);if(k==='arrowright')this.orbit.rotate(-25,0);if(k==='arrowup')this.orbit.rotate(0,-22);if(k==='arrowdown')this.orbit.rotate(0,22);
       if(k==='+'||k==='=')this.zoom(.88);if(k==='-')this.zoom(1/.88);if(k==='r')this.reset();if(k===' '&&!e.repeat)this.setPaused(!this.paused);this.invalidate();
     },options);
-    c.addEventListener('keyup',e=>{if(e.key.toLowerCase()==='v'){this.revealTarget=0;this.invalidate();}},options);
+    c.addEventListener('keyup',e=>{if(e.key.toLowerCase()==='v'){this.revealTarget=this.revealPinned?1:0;this.invalidate();}},options);
     c.addEventListener('contextmenu',e=>e.preventDefault(),options);
     c.addEventListener('blur',()=>this.clearInput(),options);
     window.addEventListener('blur',()=>this.clearInput(),options);

@@ -10,3 +10,11 @@ canvas.revealing,canvas.revealing:active{cursor:crosshair}
 .signature-mark{font:18px Georgia,serif;color:#c8c5b5;text-shadow:0 0 12px #ddcfaa55;transition:color .2s,transform .2s}
 .signature-hotspot[aria-pressed=true] .signature-mark,.signature-hotspot:hover .signature-mark{color:#f1dcba;transform:scale(1.15)}
 .signature-hotspot[aria-pressed=true] .tooltip{opacity:0}
+.scene-actions{display:flex;gap:4px;padding-right:14px;border-right:1px solid var(--line)}
+.action-button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 10px;border-radius:8px;font-size:10px;color:#a8b4ad;border:1px solid transparent}
+.action-button>span{font-size:16px;color:var(--accent)}
+.action-button:hover{background:#ffffff09}
+.action-button[aria-pressed=true]{background:#d6bd9612;color:#ead7b8;border-color:#d6bd9655}
+body.reveal-active canvas{cursor:crosshair}
+@media(max-width:700px){.tools{display:grid;grid-template-columns:1fr auto auto;gap:6px}.scene-actions{grid-column:1/-1;padding:0 0 7px;border-right:0;border-bottom:1px solid var(--line);justify-content:space-between}.action-button{flex:1;padding:0 8px}.matter-control{width:155px}}
+@media(max-width:360px){.matter-control{width:140px}.action-button{padding:0 6px}}

@@ -23,6 +23,10 @@ const updateUI=state=>{
   $('pause-label').textContent=state.paused?'Reanudar':'Pausar';$('pause-icon').textContent=state.paused?'▷':'Ⅱ';
   document.querySelectorAll('[data-focus]').forEach(button=>button.setAttribute('aria-pressed',String(Number(button.dataset.focus)===state.focus)));
   $('signature').setAttribute('aria-pressed',String(state.signature));
+  $('signature-toggle').setAttribute('aria-pressed',String(state.signature));
+  $('reveal').setAttribute('aria-pressed',String(state.reveal));
+  $('wave').disabled=state.paused;$('wave').title=state.paused?'Reanuda el movimiento para lanzar ondas':'Propagar una onda';
+  document.body.classList.toggle('reveal-active',state.reveal);
 };
 function fallback(message){
   if(failed)return;failed=true;scene?.destroy();canvas.hidden=true;$('fallback').hidden=false;$('loading').hidden=true;document.body.classList.add('fallback');
@@ -39,7 +43,10 @@ matter.addEventListener('input',()=>scene?.setMaterial(Number(matter.value)/100)
 activate($('forward'),()=>scene?.zoom(.85));activate($('back'),()=>scene?.zoom(1/.85));
 activate($('reset'),()=>{scene?.reset();$('announcement').textContent='Encuadre y materia iniciales restaurados.';});
 activate($('pause'),()=>scene?.setPaused(!scene.paused));
-activate($('signature'),()=>{scene?.toggleSignature();$('announcement').textContent=scene?.signatureTarget?'Bere y un corazón aparecen como una constelación de partículas.':'La constelación vuelve al polvo.';});
+const toggleSignature=()=>{scene?.toggleSignature();$('announcement').textContent=scene?.signatureTarget?'Berenice y un corazón aparecen como una constelación de partículas.':'La constelación vuelve al polvo.';};
+activate($('signature'),toggleSignature);activate($('signature-toggle'),toggleSignature);
+activate($('reveal'),()=>{scene?.toggleReveal();$('announcement').textContent=scene?.revealPinned?'Revelado activo. Mueve el cursor o arrastra un dedo. Desactiva Revelar para orbitar.':'Revelado desactivado. Arrastra para orbitar.';});
+activate($('wave'),()=>scene?.emitWave());
 document.querySelectorAll('[data-focus]').forEach(button=>activate(button,()=>{scene?.activate(Number(button.dataset.focus));$('announcement').textContent=button.getAttribute('aria-pressed')==='true'?button.getAttribute('aria-label'):'Transformación local cerrada.';}));
 const dismissHint=()=>document.body.classList.add('exploring');
 canvas.addEventListener('pointerdown',dismissHint,{once:true});canvas.addEventListener('wheel',dismissHint,{once:true,passive:true});canvas.addEventListener('keydown',dismissHint,{once:true});

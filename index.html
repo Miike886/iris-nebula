@@ -13,7 +13,7 @@
 <body>
   <main>
     <h1 class="sr-only">Iris Nebula — lente fotográfica interactiva</h1>
-    <canvas id="universe" tabindex="0" aria-label="Imagen tridimensional. Arrastra o usa las flechas para orbitar. Rueda, pellizco o más y menos para acercarte. Mantén V y usa las flechas para revelar la foto. B descubre Bere. R vuelve al origen." aria-describedby="hint"></canvas>
+    <canvas id="universe" tabindex="0" aria-label="Imagen tridimensional. Arrastra o usa las flechas para orbitar. Rueda, pellizco o más y menos para acercarte. Mantén V y usa las flechas para revelar la foto. B alterna Berenice. R vuelve al origen." aria-describedby="hint"></canvas>
     <div id="fallback" hidden><img src="./Bajo%20la%20mirada%20cinem%C3%A1tica.png" alt="Fotografía original de los ojos de Iris Nebula"><p id="fallback-message">Vista fotográfica. La exploración 3D no está disponible.</p></div>
     <div class="shade" aria-hidden="true"></div>
     <header>
@@ -24,11 +24,16 @@
     <div class="interactions" aria-label="Transformaciones locales">
       <button class="hotspot" data-focus="0" aria-label="Dispersar el iris izquierdo en partículas" aria-pressed="false"><span class="hotspot-mark" aria-hidden="true">+</span><span class="tooltip">Dispersar</span></button>
       <button class="hotspot" data-focus="1" aria-label="Revelar caracteres en el iris derecho" aria-pressed="false"><span class="hotspot-mark" aria-hidden="true">+</span><span class="tooltip">Revelar ASCII</span></button>
-      <button class="hotspot signature-hotspot" id="signature" aria-label="Revelar constelación Bere y corazón" aria-pressed="false"><span class="signature-mark" aria-hidden="true">✧</span><span class="tooltip">Descubrir Bere</span></button>
+      <button class="hotspot signature-hotspot" id="signature" aria-label="Mostrar constelación Berenice y corazón" aria-pressed="true"><span class="signature-mark" aria-hidden="true">✧</span><span class="tooltip">Berenice</span></button>
     </div>
     <div class="bottom">
       <p id="hint"><span class="desktop-hint">Arrastra para orbitar <i>·</i> Mantén pulsado para revelar</span><span class="mobile-hint">Gira con un dedo <i>·</i> Mantén para revelar</span></p>
       <nav class="tools" aria-label="Controles de exploración">
+        <div class="scene-actions" role="group" aria-label="Interacciones de la escena">
+          <button id="reveal" class="action-button" aria-pressed="false" title="Activa el revelado y mueve el cursor o arrastra un dedo"><span aria-hidden="true">◉</span>Revelar</button>
+          <button id="wave" class="action-button" title="Propagar una onda"><span aria-hidden="true">◎</span>Onda</button>
+          <button id="signature-toggle" class="action-button" aria-pressed="true" title="Mostrar u ocultar Berenice y el corazón"><span aria-hidden="true">✧</span>Berenice</button>
+        </div>
         <div class="matter-control"><div class="matter-caption"><label for="matter">MATERIA</label><span id="matter-label">Caracteres</span></div><input type="range" id="matter" min="0" max="200" value="135" style="--progress:67.5%" aria-label="Transformar imagen en partículas y ASCII" aria-valuetext="Caracteres"><div class="range-ends" aria-hidden="true"><span>Imagen</span><span>ASCII</span></div></div>
         <div class="zoom-control"><button id="back" class="icon-button" title="Alejar" aria-label="Alejar">−</button><button id="forward" class="icon-button" title="Acercar" aria-label="Acercar">+</button></div>
         <button id="reset" class="icon-button" title="Volver al origen (R)" aria-label="Volver al origen">↺</button>
@@ -44,10 +49,10 @@
       <div><dt>Girar</dt><dd>Arrastra con el ratón o un dedo. Las flechas del teclado también orbitan alrededor de la imagen.</dd></div>
       <div><dt>Acercar</dt><dd>Rueda, pellizco con dos dedos o botones − / +.</dd></div>
       <div><dt>Transformar</dt><dd>Desliza Materia: imagen → partículas → ASCII. Toca los dos puntos sobre los iris para revelar una variación local; vuelve a tocarlos para cerrarla.</dd></div>
-      <div><dt>Revelar</dt><dd>Mantén pulsado y recorre la imagen para abrir una ventana a la fotografía. Suelta para devolverla a las partículas. Con teclado, mantén V y mueve el foco con las flechas.</dd></div>
-      <div><dt>Descubrir</dt><dd>Toca la estrella ✧ bajo la mirada para reunir la constelación Bere. También puedes pulsar B.</dd></div>
+      <div><dt>Revelar</dt><dd>Activa Revelar y mueve el cursor o arrastra un dedo sobre la foto. Desactívalo para volver a orbitar. También puedes mantener pulsado, o mantener V y usar las flechas.</dd></div>
+      <div><dt>Berenice</dt><dd>El nombre y el corazón aparecen desde el inicio. El botón Berenice, la estrella ✧ o la tecla B los dispersan y reúnen.</dd></div>
     </dl>
-    <p>Un toque en la escena propaga una onda entre las estrellas. R o ↺ restaura el encuadre. La pausa detiene las animaciones y permite seguir explorando.</p>
+    <p>Onda o un toque en la escena propagan una onda entre las estrellas. En pausa, reanuda para lanzar ondas. R o ↺ restaura la vista inicial con Berenice visible.</p>
     <button id="help-start">Explorar <span aria-hidden="true">↗</span></button>
   </dialog>
 </body>
