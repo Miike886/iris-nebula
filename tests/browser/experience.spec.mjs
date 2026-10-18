@@ -1,6 +1,40 @@
 import {test,expect} from '@playwright/test';
 const state=page=>page.evaluate(async()=>{const{scene:s}=await import('/src/app.js');const p=s.camera.position,d=s.camera.getWorldDirection(s.pointerTarget.clone());return {position:{x:p.x,y:p.y,z:p.z},radius:p.length(),centerDot:d.dot(p.clone().normalize().negate()),orbit:{...s.orbit.current},target:{...s.orbit.target},time:s.time,frame:s.frame,material:s.material,paused:s.paused,focus:s.focusIndex,focusAmount:s.uniforms.uFocusAmount.value,hover:s.uniforms.uHover.value,pulse:s.uniforms.uPulse.value,points:s.field.geometry.attributes.position.count,calls:s.renderer.info.render.calls};});
 const ready=async page=>{await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-renderer','webgl');};
+const detail=page=>page.evaluate(async()=>{const{scene:s}=await import('/src/app.js');return {reveal:s.uniforms.uReveal.value,signature:s.uniforms.uSignature.value,pointer:s.uniforms.uPointer.value.toArray()};});
+
+test('hold reveals the photo without orbiting; stars and signature respond to direct input',async({page})=>{
+  await ready(page);await page.mouse.click(100,180);expect((await state(page)).pulse).toBeGreaterThan(0);
+  const start=await state(page);await page.mouse.move(720,420);await page.mouse.down();
+  await expect.poll(async()=>(await detail(page)).reveal).toBeGreaterThan(.95);
+  const before=await detail(page);await page.mouse.move(1000,500,{steps:8});
+  expect((await state(page)).orbit).toEqual(start.orbit);expect((await detail(page)).pointer).not.toEqual(before.pointer);
+  await page.screenshot({path:'test-results/desktop-reveal.png'});
+  await page.mouse.up();await expect.poll(async()=>(await detail(page)).reveal).toBe(0);
+  await page.locator('#signature').click();await expect(page.locator('#signature')).toHaveAttribute('aria-pressed','true');await expect.poll(async()=>(await detail(page)).signature).toBe(1);
+  await page.mouse.move(30,100);await page.screenshot({path:'test-results/desktop-signature.png'});
+  await page.locator('#reset').click();await expect.poll(async()=>(await detail(page)).signature).toBe(0);
+  await page.locator('#universe').focus();await page.keyboard.press('b');await expect(page.locator('#signature')).toHaveAttribute('aria-pressed','true');
+  await page.keyboard.down('v');await expect.poll(async()=>(await detail(page)).reveal).toBeGreaterThan(.95);
+  const keyPointer=(await detail(page)).pointer;await page.keyboard.press('ArrowRight');await expect.poll(async()=>(await detail(page)).pointer[0]).toBeGreaterThan(keyPointer[0]+.5);expect((await state(page)).orbit).toEqual(start.orbit);
+  await page.keyboard.up('v');await expect.poll(async()=>(await detail(page)).reveal).toBe(0);
+});
+
+test('touch hold cancels cleanly, second finger resumes zoom, and constellation remains accessible',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});const page=await context.newPage();await ready(page);
+  const cdp=await context.newCDPSession(page),start=await state(page);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:190,y:420,id:1}]});await expect.poll(async()=>(await detail(page)).reveal).toBeGreaterThan(.95);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:280,y:445,id:1}]});expect((await state(page)).orbit).toEqual(start.orbit);
+  await page.screenshot({path:'test-results/mobile-reveal.png'});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});await expect.poll(async()=>(await detail(page)).reveal).toBe(0);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:190,y:420,id:1}]});await expect.poll(async()=>(await detail(page)).reveal).toBeGreaterThan(.95);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:190,y:420,id:1},{x:280,y:420,id:2}]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:140,y:420,id:1},{x:310,y:420,id:2}]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await expect.poll(async()=>(await detail(page)).reveal).toBe(0);await expect.poll(async()=>(await state(page)).orbit.zoom).toBeLessThan(.7);
+  await page.locator('#reset').tap();await expect.poll(async()=>(await state(page)).orbit.zoom).toBe(1);
+  await page.locator('#signature').tap();await expect.poll(async()=>(await detail(page)).signature).toBe(1);await page.screenshot({path:'test-results/mobile-signature.png'});
+  await context.close();
+});
 
 test('desktop: recognizable initial image, bounded orbit, perspective and zoom',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
@@ -30,6 +64,8 @@ test('continuous materials and source-anchored local interactions',async({page})
 test('pause and reduced motion stop idle frames but retain direct controls',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});await ready(page);await expect(page.locator('#pause')).toHaveAttribute('aria-pressed','true');await expect.poll(async()=>(await state(page)).frame).toBe(0);
   const before=await state(page);expect(before.material).toBe(1.35);await page.waitForTimeout(100);expect((await state(page)).time).toBe(before.time);
+  await page.locator('#signature').click();await expect.poll(async()=>(await detail(page)).signature).toBe(1);await expect.poll(async()=>(await state(page)).frame).toBe(0);
+  await page.locator('#universe').focus();await page.keyboard.down('v');await expect.poll(async()=>(await detail(page)).reveal).toBe(1);await page.keyboard.up('v');await expect.poll(async()=>(await detail(page)).reveal).toBe(0);
   await page.locator('#forward').click();await expect.poll(async()=>(await state(page)).orbit.zoom).toBe(.85);
   await page.locator('[data-focus="0"]').click();await expect.poll(async()=>(await state(page)).focusAmount).toBe(1);await expect.poll(async()=>(await state(page)).frame).toBe(0);
   await page.locator('#help-open').click();await expect(page.locator('#help')).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('#help-open')).toBeFocused();
