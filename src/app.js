@@ -25,6 +25,8 @@ const updateUI=state=>{
   $('signature').setAttribute('aria-pressed',String(state.signature));
   $('signature-toggle').setAttribute('aria-pressed',String(state.signature));
   $('reveal').setAttribute('aria-pressed',String(state.reveal));
+  $('reveal').title=state.revealMatter>0?'Revelar partículas y ASCII sobre la imagen':'Revelar la fotografía entre las partículas';
+  $('reveal').setAttribute('aria-label',state.revealMatter>0?'Revelar partículas y ASCII':'Revelar fotografía');
   $('wave').disabled=state.paused;$('wave').title=state.paused?'Reanuda el movimiento para lanzar ondas':'Propagar una onda';
   document.body.classList.toggle('reveal-active',state.reveal);
 };

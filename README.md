@@ -37,7 +37,7 @@ Para usar el teclado, enfocar la escena con un clic o Tab. El cursor ilumina y o
 
 El deslizador mezcla **imagen → partículas → ASCII**. El giro horizontal está limitado a ±70° y la inclinación a ±27.5°; el zoom queda entre 0.56 y 1.48 veces la distancia inicial. El amortiguamiento evita cambios bruscos y el encuadre se adapta al tamaño de pantalla sin perder el centro.
 
-El botón **Revelar** mantiene el revelado activo sin sostener la pulsación. Mientras está activo, mover el cursor o arrastrar un dedo explora la foto; desactívalo para volver a orbitar. El pellizco sigue controlando el zoom. **Onda** se desactiva durante la pausa para respetar la preferencia de movimiento. Los botones usan estados accesibles y objetivos táctiles de al menos 44 px de alto; la barra se distribuye en dos filas en pantallas estrechas.
+El botón **Revelar** mantiene el revelado activo sin sostener la pulsación. Funciona en ambos sentidos: sobre la imagen descubre partículas y ASCII; sobre los estados transformados descubre la fotografía. La dirección se adapta al deslizador, también mientras el revelado está activo, mediante una transición suave. El gesto sostenido y V usan el mismo comportamiento. Desactiva el botón para volver a orbitar. El pellizco sigue controlando el zoom. **Onda** se desactiva durante la pausa para respetar la preferencia de movimiento. Los botones usan estados accesibles y objetivos táctiles de al menos 44 px de alto; la barra se distribuye en dos filas en pantallas estrechas.
 
 ## Movimiento y rendimiento
 

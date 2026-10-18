@@ -5,6 +5,8 @@ import { surfaceVertex, surfaceFragment, fieldVertex, fieldFragment, cloudVertex
 
 const lensHeight = (x,y) => 1.9*(1-(x/16)**2)+.45*(1-(y/5.2)**2);
 const INITIAL_MATTER = 1.35;
+// Keep the revealed material distinct even in intermediate slider states.
+const revealMatterFor = material => material < .7 ? INITIAL_MATTER : 0;
 
 export class IrisScene {
   constructor(canvas, onChange, onFailure) {
@@ -51,7 +53,7 @@ export class IrisScene {
     this.aspect=crop.height/crop.width;
     this.uniforms={uTime:{value:0},uMatter:{value:INITIAL_MATTER},uHover:{value:0},uPointer:{value:new THREE.Vector3()},uPulse:{value:-100},uHit:{value:new THREE.Vector3()},uFocus:{value:new THREE.Vector3()},uFocusAmount:{value:0},uFocusMode:{value:1},uPhoto:{value:this.photo},uPixelRatio:{value:this.renderer.getPixelRatio()},uHeight:{value:this.height},uLayer:{value:0}};
     this.uniforms.uPhotoHalfHeight={value:16*this.aspect};
-    this.uniforms.uReveal={value:0};this.uniforms.uSignature={value:1};
+    this.uniforms.uReveal={value:0};this.uniforms.uRevealMatter={value:revealMatterFor(INITIAL_MATTER)};this.uniforms.uSignature={value:1};
     this.makeSurface();this.makeMatter(crop);this.makeNebula(crop);this.makeStars();this.makeSignature();
     this.ready=true;this.syncCamera();this.renderer.compile(this.scene,this.camera);
     if(this.shaderError)throw new Error('No se pudieron compilar los materiales de la lente.');
@@ -231,7 +233,7 @@ export class IrisScene {
   cancelHold(){clearTimeout(this.holdTimer);this.holdTimer=0;this.holding=false;this.revealTarget=this.revealPinned?1:0;this.canvas.classList.toggle('revealing',this.revealPinned);}
   setPaused(value){this.paused=value;if(value)this.orbit.stop();this.invalidate();this.notify();}
   reset(){this.revealPinned=false;this.cancelHold();this.signatureTarget=1;this.orbit.reset();this.targetMaterial=INITIAL_MATTER;this.focusIndex=-1;this.focusTarget=0;this.hover=0;this.pointer.set(5,5);if(this.uniforms)this.uniforms.uPulse.value=-100;this.invalidate();this.notify();}
-  notify(){this.onChange?.({paused:this.paused,material:this.targetMaterial,focus:this.focusIndex,signature:this.signatureTarget===1,reveal:this.revealPinned});}
+  notify(){this.onChange?.({paused:this.paused,material:this.targetMaterial,focus:this.focusIndex,signature:this.signatureTarget===1,reveal:this.revealPinned,revealMatter:revealMatterFor(this.targetMaterial)});}
   clearInput(){this.cancelHold();this.pointers.clear();this.hover=0;this.last=0;this.invalidate();}
   bind(){
     const options={signal:this.controller.signal},c=this.canvas;
@@ -293,14 +295,14 @@ export class IrisScene {
     this.material+=(this.targetMaterial-this.material)*a;if(Math.abs(this.targetMaterial-this.material)<.001)this.material=this.targetMaterial;
     if(this.focusTarget&&this.time>this.focusUntil){this.focusTarget=0;this.focusIndex=-1;this.notify();}
     const uniforms=this.uniforms;
-    for(const [key,target]of[['uReveal',this.revealTarget],['uSignature',this.signatureTarget]]){uniforms[key].value+=(target-uniforms[key].value)*a;if(Math.abs(target-uniforms[key].value)<.001)uniforms[key].value=target;}
+    for(const [key,target]of[['uReveal',this.revealTarget],['uSignature',this.signatureTarget],['uRevealMatter',revealMatterFor(this.targetMaterial)]]){uniforms[key].value+=(target-uniforms[key].value)*a;if(Math.abs(target-uniforms[key].value)<.001)uniforms[key].value=target;}
     uniforms.uFocusAmount.value+=(this.focusTarget-uniforms.uFocusAmount.value)*a;
     if(Math.abs(this.focusTarget-uniforms.uFocusAmount.value)<.001)uniforms.uFocusAmount.value=this.focusTarget;
     uniforms.uHover.value+=(this.hover-uniforms.uHover.value)*a;
     if(Math.abs(this.hover-uniforms.uHover.value)<.001)uniforms.uHover.value=this.hover;
     uniforms.uPointer.value.lerp(this.pointerTarget,a);uniforms.uTime.value=this.time;uniforms.uMatter.value=this.material;
     this.syncCamera();this.renderer.render(this.scene,this.camera);
-    if(!this.paused||moving||this.material!==this.targetMaterial||uniforms.uFocusAmount.value!==this.focusTarget||uniforms.uHover.value!==this.hover||uniforms.uReveal.value!==this.revealTarget||uniforms.uSignature.value!==this.signatureTarget)this.invalidate();
+    if(!this.paused||moving||this.material!==this.targetMaterial||uniforms.uFocusAmount.value!==this.focusTarget||uniforms.uHover.value!==this.hover||uniforms.uReveal.value!==this.revealTarget||uniforms.uSignature.value!==this.signatureTarget||uniforms.uRevealMatter.value!==revealMatterFor(this.targetMaterial))this.invalidate();
   }
   suspend(value){this.suspended=value;this.clearInput();if(value){cancelAnimationFrame(this.frame);this.frame=0;}else this.invalidate();}
   destroy(){this.destroyed=true;this.cancelHold();cancelAnimationFrame(this.frame);this.controller.abort();this.resizeObserver.disconnect();this.resources.forEach(r=>r.dispose());this.renderer.dispose();}

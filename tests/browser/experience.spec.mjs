@@ -1,7 +1,32 @@
 import {test,expect} from '@playwright/test';
 const state=page=>page.evaluate(async()=>{const{scene:s}=await import('/src/app.js');const p=s.camera.position,d=s.camera.getWorldDirection(s.pointerTarget.clone());return {position:{x:p.x,y:p.y,z:p.z},radius:p.length(),centerDot:d.dot(p.clone().normalize().negate()),orbit:{...s.orbit.current},target:{...s.orbit.target},time:s.time,frame:s.frame,material:s.material,paused:s.paused,focus:s.focusIndex,focusAmount:s.uniforms.uFocusAmount.value,hover:s.uniforms.uHover.value,pulse:s.uniforms.uPulse.value,points:s.field.geometry.attributes.position.count,calls:s.renderer.info.render.calls};});
 const ready=async page=>{await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-renderer','webgl');};
-const detail=page=>page.evaluate(async()=>{const{scene:s}=await import('/src/app.js');return {reveal:s.uniforms.uReveal.value,signature:s.uniforms.uSignature.value,pointer:s.uniforms.uPointer.value.toArray()};});
+const detail=page=>page.evaluate(async()=>{const{scene:s}=await import('/src/app.js');return {reveal:s.uniforms.uReveal.value,revealMatter:s.uniforms.uRevealMatter.value,signature:s.uniforms.uSignature.value,pointer:s.uniforms.uPointer.value.toArray()};});
+
+test('reveal reverses photo and matter through button, hold and keyboard',async({browser})=>{
+  for(const mobile of [false,true]){
+    const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:900},hasTouch:mobile,isMobile:mobile});
+    const page=await context.newPage();await ready(page);
+    const press=selector=>page.locator(selector)[mobile?'tap':'click']();
+    await press('#pause');await page.locator('#matter').fill('0');await expect.poll(async()=>(await state(page)).material).toBe(0);
+    await expect(page.locator('#reveal')).toHaveAttribute('aria-label','Revelar partículas y ASCII');
+    await press('#reveal');await expect.poll(async()=>(await detail(page)).reveal).toBe(1);expect((await detail(page)).revealMatter).toBe(1.35);
+    await page.screenshot({path:`test-results/${mobile?'mobile':'desktop'}-inverse-reveal.png`});
+    expect((await state(page)).material).toBe(0);
+    await page.locator('#matter').fill('135');await expect.poll(async()=>(await detail(page)).revealMatter).toBe(0);
+    await expect(page.locator('#reveal')).toHaveAttribute('aria-label','Revelar fotografía');expect((await detail(page)).reveal).toBe(1);
+    await press('#reveal');await page.locator('#matter').fill('0');
+    if(mobile){
+      const cdp=await context.newCDPSession(page);
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:155,y:410,id:1}]});await expect.poll(async()=>(await detail(page)).reveal).toBe(1);expect((await detail(page)).revealMatter).toBe(1.35);
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    }else{
+      await page.locator('#universe').focus();await page.keyboard.down('v');await expect.poll(async()=>(await detail(page)).reveal).toBe(1);expect((await detail(page)).revealMatter).toBe(1.35);await page.keyboard.up('v');
+    }
+    await expect.poll(async()=>(await detail(page)).reveal).toBe(0);expect((await state(page)).material).toBe(0);await expect.poll(async()=>(await state(page)).frame).toBe(0);
+    await context.close();
+  }
+});
 
 test('hold reveals the photo without orbiting; stars and signature respond to direct input',async({page})=>{
   await ready(page);await page.mouse.click(100,180);expect((await state(page)).pulse).toBeGreaterThan(0);

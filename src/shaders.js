@@ -1,13 +1,13 @@
 // The surface and its sampled matter share deformation, illumination and local
 // transformation fields. Neither camera movement nor pointer input changes UVs.
 const fields = /* glsl */`
-uniform float uTime, uMatter, uHover, uPulse, uFocusAmount, uFocusMode, uReveal;
+uniform float uTime, uMatter, uHover, uPulse, uFocusAmount, uFocusMode, uReveal, uRevealMatter;
 uniform vec3 uPointer, uHit, uFocus;
 float localMatter(vec3 p) {
   float focus = 1.-smoothstep(2.3,5.5,distance(p.xy,uFocus.xy));
   float matter=mix(uMatter, uFocusMode, uFocusAmount*focus);
   float reveal=(1.-smoothstep(1.6,3.7,distance(p.xy,uPointer.xy)))*uReveal;
-  return mix(matter,0.,reveal);
+  return mix(matter,uRevealMatter,reveal);
 }
 float wave(vec3 p) {
   float age=uTime-uPulse;
