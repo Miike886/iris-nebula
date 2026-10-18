@@ -1,339 +1,200 @@
-import { clamp, mix, materialWeights, randomGenerator, zoomAt } from './math.js';
+import * as THREE from '../vendor/three.module.js';
+import { Flight } from './flight.js';
+import { clamp, randomGenerator } from './math.js';
+import { fieldVertex, fieldFragment, fragmentVertex, fragmentFragment } from './shaders.js';
 
-// A single sampled photograph supplies every point, glyph, color and wisp.
-// Canvas 2D is the renderer on all devices: no GPU/WebGL dependency or remote assets.
 export class IrisScene {
-  constructor(canvas, onChange) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d', { alpha: false });
-    if (!this.ctx) throw new Error('Canvas 2D no está disponible.');
-    this.onChange = onChange;
-    this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.paused = this.reduced;
-    this.current = { x: 0, y: 0, zoom: 1, material: .38 };
-    this.target = { ...this.current };
-    this.pointer = { x: -10000, y: -10000, strength: 0, active: false };
-    this.pointers = new Map();
-    this.ripples = [];
-    this.time = 0;
-    this.dirty = true;
-    this.ready = false;
-    this.frame = 0;
-    this.last = 0;
-    this.lastPaint = 0;
-    this.listeners = new AbortController();
-    this.resizeObserver = new ResizeObserver(() => this.resize());
-    this.resizeObserver.observe(canvas.parentElement);
-    this.bindEvents();
-    this.resize();
+  constructor(canvas, onChange, onFailure) {
+    this.canvas=canvas; this.onChange=onChange; this.onFailure=onFailure;
+    this.mobile=matchMedia('(pointer: coarse)').matches || innerWidth<700;
+    this.motionQuery=matchMedia('(prefers-reduced-motion: reduce)');
+    this.reduced=this.motionQuery.matches; this.paused=this.reduced;
+    this.flight=new Flight(this.mobile?44:24);
+    this.scene=new THREE.Scene(); this.scene.background=new THREE.Color('#05080c');
+    this.camera=new THREE.PerspectiveCamera(58,1,.15,160);
+    this.renderer=new THREE.WebGLRenderer({canvas,antialias:false,alpha:false,powerPreference:'high-performance'});
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio,this.mobile?1.35:1.6));
+    this.renderer.outputColorSpace=THREE.SRGBColorSpace;
+    this.renderer.debug.onShaderError=()=>{this.shaderError=true;};
+    this.keys=new Set(); this.held=new Set(); this.pointers=new Map();
+    this.pointer=new THREE.Vector2(5,5); this.ray=new THREE.Raycaster();
+    this.time=0; this.material=.35; this.targetMaterial=.35; this.hover=0; this.frame=0; this.last=0; this.paint=0; this.ready=false;
+    this.controller=new AbortController(); this.zone=-1; this.suspended=false;
+    this.resources=[]; this.zones=[
+      {position:{x:-7.6,y:.6,z:7},target:{x:-7.5,y:0,z:0}},
+      {position:{x:12,y:2,z:6},target:{x:7.5,y:0,z:0}},
+      {position:{x:2,y:6,z:-7},target:{x:1,y:4,z:-17}},
+      {position:{x:-17,y:5,z:-14},target:{x:0,y:0,z:0}}
+    ];
+    this.bind(); this.resizeObserver=new ResizeObserver(()=>this.resize());
+    this.resizeObserver.observe(canvas); this.resize();
   }
-
-  async load(url) {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    this.image = img;
-    this.prepareImage();
-    this.makeMatter();
-    this.ready = true;
-    this.invalidate();
-    this.notify();
+  own(object){this.resources.push(object);return object;}
+  async load(url){
+    const image=new Image(); image.src=url; await image.decode();
+    if(this.destroyed)return;
+    // Crop in memory only; never alter or move the original photograph.
+    const probe=document.createElement('canvas');probe.width=120;probe.height=Math.round(image.height/image.width*120);
+    const pc=probe.getContext('2d',{willReadFrequently:true});pc.drawImage(image,0,0,probe.width,probe.height);
+    const data=pc.getImageData(0,0,probe.width,probe.height).data;
+    let top=probe.height,bottom=0;
+    for(let y=0;y<probe.height;y++){let sum=0;for(let x=0;x<probe.width;x++){const k=(y*probe.width+x)*4;sum+=data[k]+data[k+1]+data[k+2];}if(sum/(probe.width*3)>19){top=Math.min(top,y);bottom=y;}}
+    if(bottom<=top){top=0;bottom=probe.height-1;}
+    const crop=document.createElement('canvas');crop.width=image.width;crop.height=Math.round((bottom-top+1)/probe.height*image.height);
+    crop.getContext('2d').drawImage(image,0,top/probe.height*image.height,image.width,crop.height,0,0,crop.width,crop.height);
+    this.photo=this.own(new THREE.CanvasTexture(crop));this.photo.colorSpace=THREE.SRGBColorSpace;
+    this.aspect=crop.height/crop.width;
+    this.makeField(crop);this.makeFragments();this.makeHaze();
+    this.ready=true;this.syncCamera();
+    this.renderer.compile(this.scene,this.camera);
+    if(this.shaderError)throw new Error('No se pudieron compilar los materiales 3D.');
+    this.invalidate();this.notify();
   }
-
-  prepareImage() {
-    // Detect the photograph's lit band, excluding the original black letterbox.
-    const probe = document.createElement('canvas');
-    probe.width = 96; probe.height = Math.round(96 * this.image.height / this.image.width);
-    const context = probe.getContext('2d', { willReadFrequently: true });
-    context.drawImage(this.image, 0, 0, probe.width, probe.height);
-    const pixels = context.getImageData(0, 0, probe.width, probe.height).data;
-    let top = probe.height, bottom = 0;
-    for (let y = 0; y < probe.height; y++) {
-      let light = 0;
-      for (let x = 0; x < probe.width; x++) { const k = (y * probe.width + x) * 4; light += pixels[k] + pixels[k + 1] + pixels[k + 2]; }
-      if (light / (probe.width * 3) > 19) { top = Math.min(top, y); bottom = y; }
+  makeField(crop){
+    const random=randomGenerator(181),sample=document.createElement('canvas');
+    sample.width=this.mobile?210:330;sample.height=Math.round(sample.width*this.aspect);
+    const sc=sample.getContext('2d',{willReadFrequently:true});sc.drawImage(crop,0,0,sample.width,sample.height);
+    const pixels=sc.getImageData(0,0,sample.width,sample.height).data;
+    const positions=[],homes=[],colors=[],seeds=[],kinds=[];
+    const add=(p,home,color,kind)=>{positions.push(...p);homes.push(...home);colors.push(...color);seeds.push(random());kinds.push(kind);};
+    const palette=[];
+    for(let y=0;y<sample.height;y++)for(let x=0;x<sample.width;x++){
+      const k=(y*sample.width+x)*4;
+      const r=pixels[k]/255,g=pixels[k+1]/255,b=pixels[k+2]/255;
+      const lum=r*.2126+g*.7152+b*.0722;
+      const u=(x+.5)/sample.width,v=(y+.5)/sample.height;
+      const fade=Math.min(1,u*12,(1-u)*12,v*9,(1-v)*9);
+      if(lum<.045 || random()>fade)continue;
+      const home=[(u-.5)*32,(.5-v)*32*this.aspect,0];
+      const edge=Math.pow(Math.abs(v-.5)*2,2);
+      const z=(lum-.35)*3.5+(random()-.5)*(.8+edge*5);
+      const p=[home[0]+(random()-.5)*edge*1.8,home[1]+(random()-.5)*edge*2,z];
+      const color=[r*.8+.15,g*.86+.12,b*.92+.13];palette.push(color);
+      add(p,home,color,0);
     }
-    if (bottom <= top) { top = 0; bottom = probe.height - 1; }
-    this.crop = { y: top / probe.height * this.image.height, h: (bottom - top + 1) / probe.height * this.image.height };
-    this.aspect = this.crop.h / this.image.width;
-    this.texture = document.createElement('canvas');
-    this.texture.width = Math.min(1280, this.image.width);
-    this.texture.height = Math.round(this.texture.width * this.aspect);
-    const tc = this.texture.getContext('2d');
-    tc.drawImage(this.image, 0, this.crop.y, this.image.width, this.crop.h, 0, 0, this.texture.width, this.texture.height);
-    // Feather the actual pixels into the field instead of presenting a rectangular photo.
-    tc.globalCompositeOperation = 'destination-in';
-    const vertical = tc.createLinearGradient(0, 0, 0, this.texture.height);
-    vertical.addColorStop(0, 'transparent'); vertical.addColorStop(.18, '#000');
-    vertical.addColorStop(.72, '#000'); vertical.addColorStop(1, 'transparent');
-    tc.fillStyle = vertical; tc.fillRect(0, 0, this.texture.width, this.texture.height);
-    const horizontal = tc.createLinearGradient(0, 0, this.texture.width, 0);
-    horizontal.addColorStop(0, 'transparent'); horizontal.addColorStop(.15, '#000');
-    horizontal.addColorStop(.85, '#000'); horizontal.addColorStop(1, 'transparent');
-    tc.fillStyle = horizontal; tc.fillRect(0, 0, this.texture.width, this.texture.height);
-    this.glow = document.createElement('canvas'); this.glow.width = this.glow.height = 128;
-    const gc = this.glow.getContext('2d'); const gradient = gc.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gradient.addColorStop(0, '#c58c6640'); gradient.addColorStop(.3, '#9767471a'); gradient.addColorStop(1, '#97674700');
-    gc.fillStyle = gradient; gc.fillRect(0, 0, 128, 128);
-  }
-
-  makeMatter() {
-    if (!this.image) return;
-    const random = randomGenerator();
-    const sample = document.createElement('canvas');
-    sample.width = this.mobile ? 150 : 236;
-    sample.height = Math.round(sample.width * this.aspect);
-    const sc = sample.getContext('2d', { willReadFrequently: true });
-    sc.drawImage(this.image, 0, this.crop.y, this.image.width, this.crop.h, 0, 0, sample.width, sample.height);
-    const data = sc.getImageData(0, 0, sample.width, sample.height).data;
-    this.points = [];
-    this.dust = [];
-    const chars = ' .·:+*ox%#@';
-    this.atlas = document.createElement('canvas'); this.atlas.width = 32 * chars.length; this.atlas.height = 32 * 12;
-    const ac = this.atlas.getContext('2d'); ac.font = '23px monospace'; ac.textAlign = 'center'; ac.textBaseline = 'middle';
-    for (let tone = 0; tone < 12; tone++) {
-      ac.fillStyle = `rgb(${115 + tone * 12},${102 + tone * 10},${81 + tone * 9})`;
-      for (let c = 0; c < chars.length; c++) ac.fillText(chars[c], c * 32 + 16, tone * 32 + 16);
+    // Source-colored filaments extend through world-space depth, crossing the
+    // photographic formation, rather than sitting on an image plane.
+    const count=this.mobile?9500:22000;
+    for(let i=0;i<count;i++){
+      const strand=i%7,t=random()*2-1,phase=strand*.91;
+      const thickness=Math.pow(random(),2)*2.1;
+      const p=[t*25+Math.sin(phase+t*5)*2+(random()-.5)*thickness,
+        Math.sin(t*3.4+phase)*4.7+(strand-3)*.72+(random()-.5)*thickness,
+        Math.cos(t*2.9+phase)*11-5+(random()-.5)*thickness*2];
+      const original=palette[Math.floor(random()*palette.length)]||[.6,.4,.3];
+      const cool=strand===2||strand===5;
+      const color=cool?[original[2]*.45+.08,original[1]*.85+.18,original[0]*.8+.23]:[original[0]*1.03+.08,original[1]*.8+.07,original[2]*.66+.04];
+      add(p,p,color,i%29===0?2:1);
     }
-    for (let y = 0; y < sample.height; y++) {
-      for (let x = 0; x < sample.width; x++) {
-        const k = (y * sample.width + x) * 4;
-        const r = data[k], g = data[k + 1], b = data[k + 2];
-        const luminance = (.2126 * r + .7152 * g + .0722 * b) / 255;
-        const px = (x + .5) / sample.width - .5, py = ((y + .5) / sample.height - .5) * this.aspect;
-        const edge = Math.pow(Math.abs(py) / (this.aspect / 2), 3);
-        const fade = Math.min(1, (1 - Math.abs(px) * 2) * 6) * Math.min(1, (1 - Math.abs(py) * 2 / this.aspect) * 6);
-        const salt = random(), phase = random() * Math.PI * 2;
-        const tone = Math.min(11, Math.floor(luminance * 15));
-        const char = Math.min(chars.length - 1, Math.floor(luminance * (chars.length + 2)));
-        this.points.push({ x: px, y: py, r, g, b, luminance, edge, fade, salt, phase, tone, char,
-          color: `rgb(${Math.round(r * .8 + 45)},${Math.round(g * .85 + 30)},${Math.round(b * .85 + 21)})` });
-        if (salt < .16 && luminance > .12) {
-          const spread = random();
-          this.dust.push({ x: px * (1 + spread * .65), y: py + (random() - .5) * .4,
-            phase, size: random() * 1.25 + .3, color: `rgb(${Math.min(255,r+65)},${Math.min(255,g+53)},${Math.min(255,b+40)})`, alpha: .12 + random() * .5,
-            depth: .5 + random() * 1.4, char, tone });
-        }
+    for(let i=0;i<(this.mobile?1400:3000);i++){
+      const angle=random()*Math.PI*2,radius=1+random()*5;
+      const p=[1+Math.cos(angle)*radius,4+Math.sin(angle)*radius*.7,-15+(random()-.5)*8];
+      add(p,p,[.25+random()*.2,.56+random()*.3,.62+random()*.3],2);
+    }
+    for(let i=0;i<(this.mobile?650:1400);i++){
+      const p=[(random()-.5)*100,(random()-.5)*65,(random()-.5)*100];add(p,p,[.35,.44,.5],1);
+    }
+    const geometry=this.own(new THREE.BufferGeometry());
+    for(const [name,values,itemSize]of[['position',positions,3],['aHome',homes,3],['aColor',colors,3],['aSeed',seeds,1],['aKind',kinds,1]])geometry.setAttribute(name,new THREE.Float32BufferAttribute(values,itemSize));
+    geometry.computeBoundingSphere();
+    const atlas=document.createElement('canvas');atlas.width=512;atlas.height=64;
+    const ac=atlas.getContext('2d');ac.font='48px monospace';ac.fillStyle='#fff';ac.textAlign='center';ac.textBaseline='middle';
+    [...'.:+*ox#@'].forEach((c,i)=>ac.fillText(c,i*64+32,32));
+    this.uniforms={uTime:{value:0},uMatter:{value:this.material},uPixelRatio:{value:this.renderer.getPixelRatio()},uHeight:{value:innerHeight},uPulse:{value:-100},uHover:{value:0},uRayOrigin:{value:new THREE.Vector3()},uRayDirection:{value:new THREE.Vector3(0,0,-1)},uHit:{value:new THREE.Vector3()},uAtlas:{value:this.own(new THREE.CanvasTexture(atlas))},uPhoto:{value:this.photo}};
+    const material=this.own(new THREE.ShaderMaterial({uniforms:this.uniforms,vertexShader:fieldVertex,fragmentShader:fieldFragment,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
+    this.field=new THREE.Points(geometry,material);this.scene.add(this.field);
+  }
+  makeFragments(){
+    const random=randomGenerator(240),positions=[],uvs=[],offsets=[],seeds=[];
+    const cols=42,rows=14;
+    for(let row=0;row<rows;row++)for(let col=0;col<cols;col++){
+      const u=col/cols,v=row/rows,seed=random();const edge=Math.pow(Math.abs(v-.5)*2,2);
+      const offset=[(random()-.5)*edge*4,(random()-.5)*edge*3,(random()-.5)*(1.6+edge*8)];
+      for(const [dx,dy]of[[0,0],[1,0],[1,1],[0,0],[1,1],[0,1]]){
+        const a=u+(dx*.97+.015)/cols,b=v+(dy*.97+.015)/rows;
+        positions.push((a-.5)*32,(b-.5)*32*this.aspect,0);uvs.push(a,b);offsets.push(...offset);seeds.push(seed);
       }
     }
-    this.stars = Array.from({ length: this.mobile ? 110 : 230 }, () => ({ x: random(), y: random(), size: random() < .08 ? 1.3 : .55, alpha: .1 + random() * .35, depth: random() }));
+    const g=this.own(new THREE.BufferGeometry());
+    for(const [name,a,n]of[['position',positions,3],['uv',uvs,2],['aOffset',offsets,3],['aSeed',seeds,1]])g.setAttribute(name,new THREE.Float32BufferAttribute(a,n));
+    const material=this.own(new THREE.ShaderMaterial({uniforms:this.uniforms,vertexShader:fragmentVertex,fragmentShader:fragmentFragment,transparent:true,depthWrite:false,side:THREE.DoubleSide}));
+    const mesh=new THREE.Mesh(g,material);mesh.frustumCulled=false;this.scene.add(mesh);
   }
-
-  resize() {
-    const rect = this.canvas.parentElement.getBoundingClientRect();
-    this.width = rect.width; this.height = rect.height;
-    const previousMobile = this.mobile;
-    this.mobile = this.width <= 700;
-    this.dpr = Math.min(devicePixelRatio || 1, this.mobile ? 1.5 : 1.75);
-    this.canvas.width = Math.round(this.width * this.dpr); this.canvas.height = Math.round(this.height * this.dpr);
-    this.baseWidth = this.mobile ? this.width * 1.36 : Math.min(this.width * .84, 1400);
-    this.center = { x: this.width / 2, y: this.height * (this.mobile ? .48 : .505) };
-    if (this.height < 550 && this.width > this.height) this.center.y = this.height * .49;
-    if (this.ready && previousMobile !== this.mobile) this.makeMatter();
-    this.constrain();
-    this.invalidate();
-  }
-
-  constrain() {
-    this.target.x = clamp(this.target.x, -this.baseWidth * this.target.zoom * .43, this.baseWidth * this.target.zoom * .43);
-    this.target.y = clamp(this.target.y, -this.height * .4 * this.target.zoom, this.height * .4 * this.target.zoom);
-  }
-  zoom(factor, anchor = this.center) {
-    Object.assign(this.target, zoomAt(this.target, this.target.zoom * factor, anchor, this.center));
-    this.constrain(); this.invalidate(); this.notify();
-  }
-  setMaterial(value) { this.target.material = clamp(value, 0, 2); this.invalidate(); this.notify(); }
-  reset() { Object.assign(this.target, { x: 0, y: 0, zoom: 1, material: .38 }); this.ripples = []; this.pointer.active = false; this.pointer.strength = 0; this.invalidate(); this.notify(); }
-  setPaused(paused) { this.paused = paused; this.ripples = []; this.pointer.strength = 0; this.invalidate(); this.notify(); }
-  notify() { this.onChange?.({ ...this.target, paused: this.paused, reduced: this.reduced }); }
-  invalidate() { this.dirty = true; if (!this.frame && !document.hidden) this.frame = requestAnimationFrame(t => this.tick(t)); }
-
-  bindEvents() {
-    const options = { signal: this.listeners.signal };
-    const local = event => { const rect = this.canvas.getBoundingClientRect(); return { x: event.clientX - rect.left, y: event.clientY - rect.top }; };
-    this.canvas.addEventListener('pointerdown', event => {
-      if (event.button !== 0) return;
-      this.canvas.setPointerCapture(event.pointerId);
-      this.canvas.focus({ preventScroll: true });
-      const point = local(event); this.pointers.set(event.pointerId, point);
-      Object.assign(this.pointer, point, { active: true });
-      if (!this.paused && !this.reduced) {
-        this.ripples.push({ x: point.x, y: point.y, born: this.time });
-        if (this.ripples.length > 4) this.ripples.shift();
-      }
-      this.invalidate();
-    }, options);
-    this.canvas.addEventListener('pointermove', event => {
-      const point = local(event), previous = this.pointers.get(event.pointerId);
-      Object.assign(this.pointer, point, { active: true });
-      if (previous) {
-        if (this.pointers.size === 2) {
-          const other = [...this.pointers.entries()].find(([id]) => id !== event.pointerId)[1];
-          const oldDistance = Math.hypot(previous.x - other.x, previous.y - other.y);
-          const distance = Math.hypot(point.x - other.x, point.y - other.y);
-          if (oldDistance > 10) this.zoom(distance / oldDistance, { x: (point.x + other.x) / 2, y: (point.y + other.y) / 2 });
-          this.target.x += (point.x - previous.x) / 2; this.target.y += (point.y - previous.y) / 2;
-        } else { this.target.x += point.x - previous.x; this.target.y += point.y - previous.y; }
-        this.pointers.set(event.pointerId, point); this.constrain();
-      }
-      this.invalidate();
-    }, options);
-    const release = event => { this.pointers.delete(event.pointerId); if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId); if (event.pointerType !== 'mouse') this.pointer.active = false; this.invalidate(); };
-    this.canvas.addEventListener('pointerup', release, options);
-    this.canvas.addEventListener('pointercancel', release, options);
-    this.canvas.addEventListener('lostpointercapture', event => { this.pointers.delete(event.pointerId); }, options);
-    this.canvas.addEventListener('pointerleave', () => { this.pointer.active = false; this.invalidate(); }, options);
-    this.canvas.addEventListener('wheel', event => { event.preventDefault(); const dy = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.height : 1); this.zoom(Math.exp(-clamp(dy, -180, 180) * .0018), local(event)); }, { ...options, passive: false });
-    this.canvas.addEventListener('keydown', event => {
-      const key = event.key.toLowerCase();
-      if (!['arrowleft','arrowright','arrowup','arrowdown','+','=','-','r','0',' '].includes(key)) return;
-      event.preventDefault();
-      if (key === 'arrowleft') this.target.x += 45;
-      if (key === 'arrowright') this.target.x -= 45;
-      if (key === 'arrowup') this.target.y += 45;
-      if (key === 'arrowdown') this.target.y -= 45;
-      if (key === '+' || key === '=') this.zoom(1.2);
-      if (key === '-') this.zoom(1 / 1.2);
-      if (key === 'r' || key === '0') this.reset();
-      if (key === ' ') this.setPaused(!this.paused);
-      this.constrain(); this.invalidate();
-    }, options);
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) { cancelAnimationFrame(this.frame); this.frame = 0; this.last = 0; }
-      else this.invalidate();
-    }, options);
-    this.motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
-    this.motionQuery.addEventListener('change', event => { this.reduced = event.matches; if (event.matches) this.setPaused(true); else { this.invalidate(); this.notify(); } }, options);
-  }
-
-  tick(now) {
-    this.frame = 0;
-    if (document.hidden || !this.ready) return;
-    // 30 fps bounds CPU cost; pause is truly demand-driven, with no hidden idle loop.
-    if (now - this.lastPaint < 30 && !this.dirty) { this.frame = requestAnimationFrame(t => this.tick(t)); return; }
-    const dt = this.last ? Math.min((now - this.last) / 1000, .05) : .033;
-    this.last = now; this.lastPaint = now;
-    if (!this.paused && !this.reduced) this.time += dt;
-    const easing = this.paused || this.reduced ? 1 : 1 - Math.exp(-dt * 11);
-    let moving = false;
-    for (const key of ['x', 'y', 'zoom', 'material']) {
-      this.current[key] = mix(this.current[key], this.target[key], easing);
-      if (Math.abs(this.current[key] - this.target[key]) < .0001) this.current[key] = this.target[key];
-      else moving = true;
-    }
-    const strength = this.pointer.active ? 1 : 0;
-    this.pointer.strength = mix(this.pointer.strength, strength, easing);
-    if (Math.abs(this.pointer.strength - strength) < .001) this.pointer.strength = strength;
-    this.ripples = this.ripples.filter(r => this.time - r.born < 2.4);
-    this.draw(); this.dirty = false;
-    if ((!this.paused && !this.reduced) || moving) this.frame = requestAnimationFrame(t => this.tick(t));
-  }
-
-  drawTexture(ctx, cx, cy, size, alpha) {
-    if (alpha < .005) return;
-    const height = size * this.aspect;
-    ctx.globalAlpha = alpha;
-    // Narrow strips share the field's ripple; texture remains part of the matter.
-    const strips = 42;
-    for (let i = 0; i < strips; i++) {
-      const x = cx + (i / strips - .5) * size;
-      let offset = 0;
-      for (const ripple of this.ripples) {
-        const age = this.time - ripple.born;
-        const d = Math.hypot(x - ripple.x, cy - ripple.y);
-        const front = d - age * 240;
-        offset += Math.sin(front * .035) * Math.exp(-Math.pow(front / 80, 2)) * 14 * Math.exp(-age);
-      }
-      ctx.drawImage(this.texture, i / strips * this.texture.width, 0, this.texture.width / strips, this.texture.height,
-        x, cy - height / 2 + offset, size / strips + .7, height);
+  makeHaze(){
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=128;
+    const ctx=canvas.getContext('2d'),gradient=ctx.createRadialGradient(64,64,0,64,64,64);
+    gradient.addColorStop(0,'#ffffff26');gradient.addColorStop(.3,'#ffffff0c');gradient.addColorStop(1,'#ffffff00');ctx.fillStyle=gradient;ctx.fillRect(0,0,128,128);
+    const texture=this.own(new THREE.CanvasTexture(canvas));const random=randomGenerator(31);
+    for(let i=0;i<15;i++){
+      const material=this.own(new THREE.SpriteMaterial({map:texture,color:i%3===0?'#628eaa':'#cf895b',transparent:true,opacity:.5,depthWrite:false,blending:THREE.AdditiveBlending}));
+      const sprite=new THREE.Sprite(material);sprite.position.set((random()-.5)*35,(random()-.5)*12,(random()-.5)*26-5);
+      const scale=9+random()*12;sprite.scale.set(scale,scale,1);this.scene.add(sprite);
     }
   }
-
-  draw() {
-    const ctx = this.ctx, w = this.width, h = this.height, t = this.time;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = '#090b0c'; ctx.fillRect(0, 0, w, h);
-    const { x, y, zoom, material } = this.current;
-    const weights = materialWeights(material);
-    const cx = this.center.x + x, cy = this.center.y + y;
-    const size = this.baseWidth * zoom;
-    const pointer = this.pointer;
-    // Quiet background, with camera-linked depth rather than independent random motion.
-    ctx.fillStyle = '#c0c8bd';
-    for (const star of this.stars) {
-      ctx.globalAlpha = star.alpha;
-      const sx = ((star.x * w + x * star.depth * .1) % w + w) % w;
-      const sy = ((star.y * h + y * star.depth * .1) % h + h) % h;
-      ctx.fillRect(sx, sy, star.size, star.size);
-    }
-    ctx.globalCompositeOperation = 'screen';
-    for (let i = 0; i < 7; i++) {
-      const radius = size * (.27 + (i % 3) * .065);
-      ctx.globalAlpha = .38 - weights.photo * .18;
-      ctx.drawImage(this.glow, cx + (i / 6 - .5) * size * .8 - radius / 2, cy + Math.sin(i * 2.4) * size * .07 - radius / 2, radius, radius);
-    }
-    ctx.globalCompositeOperation = 'source-over';
-    const textureAlpha = .16 * weights.particles + .035 * weights.ascii + weights.photo;
-    this.drawTexture(ctx, cx, cy, size, textureAlpha);
-    // In any material, hovering uncovers a small piece of its photographic origin.
-    if (pointer.strength > .01 && weights.photo < .9) {
-      ctx.save(); ctx.beginPath(); ctx.arc(pointer.x, pointer.y, this.mobile ? 48 : 73, 0, Math.PI * 2); ctx.clip();
-      this.drawTexture(ctx, cx, cy, size, pointer.strength * .35); ctx.restore();
-    }
-    const particleAlpha = weights.particles + weights.ascii * .1 + weights.photo * .035;
-    const glyphAlpha = weights.ascii;
-    const cell = size / (this.mobile ? 150 : 236);
-    const driftScale = Math.max(.12, 1 - weights.photo);
-    for (let i = 0; i < this.points.length; i++) {
-      const p = this.points[i];
-      if (p.fade < .01) continue;
-      // Dark pixels remain dark, preserving pupils and lashes at every scale.
-      const warp = p.edge * .035 * driftScale;
-      let px = cx + (p.x + Math.sin(p.phase + t * .15) * warp) * size;
-      let py = cy + (p.y + Math.cos(p.phase + t * .12) * warp * .8) * size;
-      if (px < -30 || px > w + 30 || py < -30 || py > h + 30) continue;
-      const dx = px - pointer.x, dy = py - pointer.y, distance2 = dx * dx + dy * dy;
-      const influence = this.mobile ? 95 : 125;
-      if (pointer.strength > .01 && distance2 < influence * influence) {
-        const d = Math.sqrt(distance2) || 1;
-        const force = Math.pow(1 - d / influence, 2) * 38 * pointer.strength * driftScale;
-        px += dx / d * force; py += dy / d * force;
-      }
-      for (const ripple of this.ripples) {
-        const age = t - ripple.born, rx = px - ripple.x, ry = py - ripple.y;
-        const distance = Math.hypot(rx, ry) || 1, front = distance - age * 240;
-        if (Math.abs(front) < 130) { const force = Math.sin(front * .035) * Math.exp(-Math.pow(front / 65, 2)) * 22 * Math.exp(-age); px += rx / distance * force; py += ry / distance * force; }
-      }
-      if (particleAlpha > .01) {
-        ctx.globalAlpha = p.fade * particleAlpha * (.3 + p.luminance * .7);
-        ctx.fillStyle = p.color;
-        const dot = Math.max(.65, cell * (.16 + p.luminance * .3) * (p.salt * .7 + .7));
-        ctx.fillRect(px - dot / 2, py - dot / 2, dot, dot);
-      }
-      if (glyphAlpha > .015 && i % 2 === 0) {
-        ctx.globalAlpha = p.fade * glyphAlpha * (.22 + p.luminance * .8);
-        const glyphSize = Math.max(3.5, cell * 1.55);
-        ctx.drawImage(this.atlas, p.char * 32, p.tone * 32, 32, 32, px - glyphSize / 2, py - glyphSize / 2, glyphSize, glyphSize);
-      }
-    }
-    // Loosened image fragments carry their source color and character into the void.
-    const dustAlpha = 1 - weights.photo * .68;
-    for (let i = 0; i < this.dust.length; i++) {
-      const p = this.dust[i];
-      let px = cx + (p.x + Math.sin(t * .07 + p.phase) * .012) * size;
-      let py = cy + (p.y + Math.cos(t * .06 + p.phase) * .016) * size;
-      const dx = px - pointer.x, dy = py - pointer.y, d = Math.hypot(dx, dy);
-      if (d < 140 && d > 0) { const force = (1 - d / 140) * 32 * pointer.strength; px += dx / d * force; py += dy / d * force; }
-      if (px < 0 || px > w || py < 0 || py > h) continue;
-      ctx.globalAlpha = p.alpha * dustAlpha; ctx.fillStyle = p.color;
-      const dot = p.size * Math.min(zoom, 2);
-      if (i % 13 === 0) {
-        const gs = clamp(9 * zoom, 7, 22); ctx.globalAlpha *= .75;
-        ctx.drawImage(this.atlas, p.char * 32, p.tone * 32, 32, 32, px, py, gs, gs);
-      } else ctx.fillRect(px, py, dot, dot);
-    }
-    ctx.globalAlpha = 1;
+  resize(){const {width,height}=this.canvas.getBoundingClientRect();this.width=width;this.height=height;this.camera.aspect=width/Math.max(1,height);this.camera.updateProjectionMatrix();this.renderer.setSize(width,height,false);if(this.uniforms)this.uniforms.uHeight.value=height;this.invalidate();}
+  syncCamera(){
+    const p=this.flight.position;this.camera.position.set(p.x,p.y,p.z);this.camera.rotation.set(this.flight.pitch,this.flight.yaw,0,'YXZ');this.camera.updateMatrixWorld();
+    this.ray.setFromCamera(this.pointer,this.camera);
+    if(this.uniforms){this.uniforms.uRayOrigin.value.copy(this.ray.ray.origin);this.uniforms.uRayDirection.value.copy(this.ray.ray.direction);}
   }
-  destroy() { cancelAnimationFrame(this.frame); this.resizeObserver.disconnect(); this.listeners.abort(); }
+  setMaterial(value){this.targetMaterial=clamp(value,0,2);this.invalidate();this.notify();}
+  travel(amount){this.flight.move(0,0,amount);this.invalidate();}
+  hold(direction,active){active?this.held.add(direction):this.held.delete(direction);this.invalidate();}
+  setPaused(value){this.paused=value;this.keys.clear();this.held.clear();this.invalidate();this.notify();}
+  reset(){this.flight.reset();this.targetMaterial=.35;this.zone=-1;this.hover=0;this.pointer.set(5,5);if(this.uniforms)this.uniforms.uPulse.value=-100;this.invalidate();this.notify();}
+  visit(){this.zone=(this.zone+1)%this.zones.length;const z=this.zones[this.zone];this.flight.visit(z.position,z.target,this.reduced||this.paused);this.invalidate();this.notify();}
+  notify(){this.onChange?.({paused:this.paused,material:this.targetMaterial,reduced:this.reduced});}
+  clearInput(){this.keys.clear();this.held.clear();this.pointers.clear();this.hover=0;this.last=0;}
+  bind(){
+    const options={signal:this.controller.signal},c=this.canvas;
+    const updatePointer=e=>{const r=c.getBoundingClientRect();this.pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);this.hover=1;};
+    c.addEventListener('pointerdown',e=>{if(e.button!==0&&e.button!==2)return;c.focus({preventScroll:true});c.setPointerCapture(e.pointerId);this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,button:e.button});updatePointer(e);this.syncCamera();if(this.uniforms&&!this.paused&&!this.reduced){this.ray.ray.at(12,this.uniforms.uHit.value);this.uniforms.uPulse.value=this.time;}this.invalidate();},options);
+    c.addEventListener('pointermove',e=>{
+      updatePointer(e);const old=this.pointers.get(e.pointerId);
+      if(old){
+        if(this.pointers.size===2){
+          const other=[...this.pointers.entries()].find(([id])=>id!==e.pointerId)[1];
+          const before=Math.hypot(old.x-other.x,old.y-other.y),after=Math.hypot(e.clientX-other.x,e.clientY-other.y);
+          this.flight.move(-(e.clientX-old.x)*.012,(e.clientY-old.y)*.012,(after-before)*.035);
+        }else if(old.button===2||e.shiftKey)this.flight.move(-(e.clientX-old.x)*.025,(e.clientY-old.y)*.025,0);
+        else this.flight.look(e.clientX-old.x,e.clientY-old.y);
+        this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,button:old.button});
+      }this.invalidate();
+    },options);
+    const release=e=>{this.pointers.delete(e.pointerId);if(c.hasPointerCapture(e.pointerId))c.releasePointerCapture(e.pointerId);if(e.pointerType!=='mouse')this.hover=0;this.invalidate();};
+    c.addEventListener('pointerup',release,options);c.addEventListener('pointercancel',release,options);
+    c.addEventListener('lostpointercapture',e=>this.pointers.delete(e.pointerId),options);
+    c.addEventListener('pointerleave',()=>{this.hover=0;this.invalidate();},options);
+    c.addEventListener('contextmenu',e=>e.preventDefault(),options);
+    c.addEventListener('wheel',e=>{e.preventDefault();const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?this.height:1);this.travel(-clamp(delta,-180,180)*.014);},{...options,passive:false});
+    c.addEventListener('keydown',e=>{
+      const key=e.key.toLowerCase();
+      if(['w','a','s','d','q','e','arrowup','arrowdown','arrowleft','arrowright'].includes(key)){e.preventDefault();this.keys.add(key);this.invalidate();}
+      if(e.repeat)return;
+      if(key==='r')this.reset();if(key==='+'||key==='=')this.travel(2);if(key==='-')this.travel(-2);
+      if(key===' '){e.preventDefault();this.setPaused(!this.paused);}
+    },options);
+    window.addEventListener('keyup',e=>{this.keys.delete(e.key.toLowerCase());},options);
+    c.addEventListener('blur',()=>this.clearInput(),options);window.addEventListener('blur',()=>this.clearInput(),options);
+    document.addEventListener('visibilitychange',()=>{this.clearInput();if(document.hidden){cancelAnimationFrame(this.frame);this.frame=0;}else this.invalidate();},options);
+    this.motionQuery.addEventListener('change',e=>{this.reduced=e.matches;if(e.matches)this.setPaused(true);else this.notify();},options);
+    c.addEventListener('webglcontextlost',e=>{e.preventDefault();cancelAnimationFrame(this.frame);this.frame=0;this.onFailure?.('Se perdió el contexto gráfico.');},options);
+  }
+  invalidate(){if(!this.frame&&!this.destroyed&&!document.hidden&&!this.suspended)this.frame=requestAnimationFrame(t=>this.tick(t));}
+  tick(now){
+    this.frame=0;if(!this.ready||this.destroyed||this.suspended||document.hidden)return;
+    const interval=this.mobile?1000/30:1000/45;if(now-this.paint<interval){this.invalidate();return;}
+    const dt=this.last?Math.min((now-this.last)/1000,.05):.016;this.last=now;this.paint=now;
+    if(!this.paused&&!this.reduced)this.time+=dt;
+    const down=(...names)=>names.some(n=>this.keys.has(n)||this.held.has(n))?1:0;
+    const f=down('w','arrowup','forward')-down('s','arrowdown','back'),r=down('d','arrowright','right')-down('a','arrowleft','left'),u=down('e','up')-down('q','down');
+    const length=Math.max(1,Math.hypot(f,r,u));if(f||r||u)this.flight.move(r*dt*7/length,u*dt*7/length,f*dt*7/length);
+    const flying=this.flight.advance(dt),easing=this.paused||this.reduced?1:1-Math.exp(-dt*6);
+    this.material+=(this.targetMaterial-this.material)*easing;if(Math.abs(this.targetMaterial-this.material)<.001)this.material=this.targetMaterial;
+    this.syncCamera();this.uniforms.uTime.value=this.time;this.uniforms.uMatter.value=this.material;this.uniforms.uHover.value=this.hover;
+    this.renderer.render(this.scene,this.camera);
+    if((!this.paused&&!this.reduced)||f||r||u||flying||this.material!==this.targetMaterial)this.invalidate();
+  }
+  suspend(value){this.suspended=value;this.clearInput();if(value){cancelAnimationFrame(this.frame);this.frame=0;}else this.invalidate();}
+  destroy(){this.destroyed=true;cancelAnimationFrame(this.frame);this.controller.abort();this.resizeObserver.disconnect();this.resources.forEach(r=>r.dispose());this.renderer.dispose();}
 }
