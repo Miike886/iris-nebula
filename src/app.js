@@ -36,7 +36,7 @@ try{
 }catch(error){console.error('Iris Nebula:',error);fallback();}
 matter.addEventListener('input',()=>scene?.setMaterial(Number(matter.value)/100));
 activate($('forward'),()=>scene?.zoom(.85));activate($('back'),()=>scene?.zoom(1/.85));
-activate($('reset'),()=>{scene?.reset();$('announcement').textContent='Encuadre e imagen iniciales restaurados.';});
+activate($('reset'),()=>{scene?.reset();$('announcement').textContent='Encuadre y materia iniciales restaurados.';});
 activate($('pause'),()=>scene?.setPaused(!scene.paused));
 document.querySelectorAll('[data-focus]').forEach(button=>activate(button,()=>{scene?.activate(Number(button.dataset.focus));$('announcement').textContent=button.getAttribute('aria-pressed')==='true'?button.getAttribute('aria-label'):'Transformación local cerrada.';}));
 const dismissHint=()=>document.body.classList.add('exploring');

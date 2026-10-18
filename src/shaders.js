@@ -5,7 +5,7 @@ uniform float uTime, uMatter, uHover, uPulse, uFocusAmount, uFocusMode;
 uniform vec3 uPointer, uHit, uFocus;
 float localMatter(vec3 p) {
   float focus = 1.-smoothstep(2.3,5.5,distance(p.xy,uFocus.xy));
-  return max(uMatter, uFocusAmount*uFocusMode*focus);
+  return mix(uMatter, uFocusMode, uFocusAmount*focus);
 }
 float wave(vec3 p) {
   float age=uTime-uPulse;

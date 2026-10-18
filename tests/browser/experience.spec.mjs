@@ -5,7 +5,7 @@ const ready=async page=>{await page.goto('/');await expect(page.locator('body'))
 test('desktop: recognizable initial image, bounded orbit, perspective and zoom',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await ready(page);await page.screenshot({path:'test-results/desktop-start.png'});const start=await state(page);
-  expect(start.material).toBe(0);expect(start.calls).toBeLessThan(10);expect(start.centerDot).toBeCloseTo(1,5);
+  expect(start.material).toBe(1.35);await expect(page.locator('#matter')).toHaveValue('135');expect(start.calls).toBeLessThan(10);expect(start.centerDot).toBeCloseTo(1,5);
   await page.mouse.move(700,400);await page.mouse.down();await page.mouse.move(510,460,{steps:12});await page.mouse.up();
   await expect.poll(async()=>(await state(page)).orbit.yaw).toBeCloseTo(.89,2);
   const rotated=await state(page);expect(rotated.position.x).not.toBe(start.position.x);expect(rotated.radius).toBeCloseTo(start.radius,5);expect(rotated.centerDot).toBeCloseTo(1,5);
@@ -19,7 +19,8 @@ test('desktop: recognizable initial image, bounded orbit, perspective and zoom',
 test('continuous materials and source-anchored local interactions',async({page})=>{
   await ready(page);await page.locator('#matter').fill('100');await expect.poll(async()=>(await state(page)).material).toBe(1);await page.screenshot({path:'test-results/desktop-particles.png'});
   await page.locator('#matter').fill('200');await expect.poll(async()=>(await state(page)).material).toBe(2);await page.screenshot({path:'test-results/desktop-ascii.png'});
-  await page.locator('#reset').click();await expect.poll(async()=>(await state(page)).material).toBe(0);
+  await page.locator('#matter').fill('0');await expect.poll(async()=>(await state(page)).material).toBe(0);
+  await page.locator('#reset').click();await expect.poll(async()=>(await state(page)).material).toBe(1.35);
   await page.locator('[data-focus="1"]').click();await expect.poll(async()=>(await state(page)).focusAmount).toBeGreaterThan(.95);expect((await state(page)).focus).toBe(1);await page.screenshot({path:'test-results/local-ascii.png'});
   await page.locator('[data-focus="1"]').click();await expect.poll(async()=>(await state(page)).focusAmount).toBe(0);
   await page.mouse.move(720,420);await expect.poll(async()=>(await state(page)).hover).toBeGreaterThan(.9);await page.mouse.click(720,420);expect((await state(page)).pulse).toBeGreaterThan(0);
@@ -27,7 +28,7 @@ test('continuous materials and source-anchored local interactions',async({page})
 
 test('pause and reduced motion stop idle frames but retain direct controls',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});await ready(page);await expect(page.locator('#pause')).toHaveAttribute('aria-pressed','true');await expect.poll(async()=>(await state(page)).frame).toBe(0);
-  const before=await state(page);await page.waitForTimeout(100);expect((await state(page)).time).toBe(before.time);
+  const before=await state(page);expect(before.material).toBe(1.35);await page.waitForTimeout(100);expect((await state(page)).time).toBe(before.time);
   await page.locator('#forward').click();await expect.poll(async()=>(await state(page)).orbit.zoom).toBe(.85);
   await page.locator('[data-focus="0"]').click();await expect.poll(async()=>(await state(page)).focusAmount).toBe(1);await expect.poll(async()=>(await state(page)).frame).toBe(0);
   await page.locator('#help-open').click();await expect(page.locator('#help')).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('#help-open')).toBeFocused();

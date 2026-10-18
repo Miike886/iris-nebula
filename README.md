@@ -1,6 +1,6 @@
 # Iris Nebula
 
-Experiencia artística local construida con Three.js y JavaScript. Una lente fotográfica curva, con dos capas posteriores, convierte los píxeles originales en polvo y caracteres. Los ojos son reconocibles desde la vista inicial. La cámara orbita alrededor del centro fijo de la imagen; rueda y pellizco modifican la distancia orbital.
+Experiencia artística local construida con Three.js y JavaScript. Una lente fotográfica curva, con dos capas posteriores, convierte los píxeles originales en polvo y caracteres. La vista inicial reconstruye los ojos con una mezcla de partículas y ASCII; la fotografía se revela moviendo Materia hacia Imagen. Volver al origen recupera la composición transformada. La cámara orbita alrededor del centro fijo de la imagen; rueda y pellizco modifican la distancia orbital.
 
 ## Iniciar
 

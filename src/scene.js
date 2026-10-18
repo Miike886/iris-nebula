@@ -4,6 +4,7 @@ import { clamp, randomGenerator } from './math.js';
 import { surfaceVertex, surfaceFragment, fieldVertex, fieldFragment } from './shaders.js';
 
 const lensHeight = (x,y) => 1.9*(1-(x/16)**2)+.45*(1-(y/5.2)**2);
+const INITIAL_MATTER = 1.35;
 
 export class IrisScene {
   constructor(canvas, onChange, onFailure) {
@@ -21,7 +22,7 @@ export class IrisScene {
     this.ray=new THREE.Raycaster(); this.pointer=new THREE.Vector2(5,5);
     this.pointerTarget=new THREE.Vector3(0,0,2);
     this.resources=[]; this.pointers=new Map();this.controller=new AbortController();
-    this.time=0;this.material=0;this.targetMaterial=0;this.hover=0;
+    this.time=0;this.material=INITIAL_MATTER;this.targetMaterial=INITIAL_MATTER;this.hover=0;
     this.frame=0;this.last=0;this.paint=0;this.ready=false;this.suspended=false;
     this.focusIndex=-1;this.focusTarget=0;this.focusUntil=0;
     this.hotspots=[new THREE.Vector3(-7.4,-1.65,lensHeight(-7.4,-1.65)+.18),new THREE.Vector3(7.3,-1.65,lensHeight(7.3,-1.65)+.18)];
@@ -45,7 +46,7 @@ export class IrisScene {
     crop.getContext('2d').drawImage(image,0,top/probe.height*image.height,image.width,crop.height,0,0,crop.width,crop.height);
     this.photo=this.own(new THREE.CanvasTexture(crop));this.photo.colorSpace=THREE.SRGBColorSpace;
     this.aspect=crop.height/crop.width;
-    this.uniforms={uTime:{value:0},uMatter:{value:0},uHover:{value:0},uPointer:{value:new THREE.Vector3()},uPulse:{value:-100},uHit:{value:new THREE.Vector3()},uFocus:{value:new THREE.Vector3()},uFocusAmount:{value:0},uFocusMode:{value:1},uPhoto:{value:this.photo},uPixelRatio:{value:this.renderer.getPixelRatio()},uHeight:{value:this.height},uLayer:{value:0}};
+    this.uniforms={uTime:{value:0},uMatter:{value:INITIAL_MATTER},uHover:{value:0},uPointer:{value:new THREE.Vector3()},uPulse:{value:-100},uHit:{value:new THREE.Vector3()},uFocus:{value:new THREE.Vector3()},uFocusAmount:{value:0},uFocusMode:{value:1},uPhoto:{value:this.photo},uPixelRatio:{value:this.renderer.getPixelRatio()},uHeight:{value:this.height},uLayer:{value:0}};
     this.makeSurface();this.makeMatter(crop);this.makeHalo(crop);
     this.ready=true;this.syncCamera();this.renderer.compile(this.scene,this.camera);
     if(this.shaderError)throw new Error('No se pudieron compilar los materiales de la lente.');
@@ -145,7 +146,7 @@ export class IrisScene {
   }
   pulse(point){if(this.paused)return;this.uniforms.uHit.value.copy(point);this.uniforms.uPulse.value=this.time;}
   setPaused(value){this.paused=value;if(value)this.orbit.stop();this.invalidate();this.notify();}
-  reset(){this.orbit.reset();this.targetMaterial=0;this.focusIndex=-1;this.focusTarget=0;this.hover=0;this.pointer.set(5,5);if(this.uniforms)this.uniforms.uPulse.value=-100;this.invalidate();this.notify();}
+  reset(){this.orbit.reset();this.targetMaterial=INITIAL_MATTER;this.focusIndex=-1;this.focusTarget=0;this.hover=0;this.pointer.set(5,5);if(this.uniforms)this.uniforms.uPulse.value=-100;this.invalidate();this.notify();}
   notify(){this.onChange?.({paused:this.paused,material:this.targetMaterial,focus:this.focusIndex});}
   clearInput(){this.pointers.clear();this.hover=0;this.last=0;}
   bind(){
