@@ -1,8 +1,9 @@
-import { mkdir, copyFile, cp } from 'node:fs/promises';
+import { mkdir, copyFile, cp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const dist = resolve(root, 'dist');
 await mkdir(dist, { recursive: true });
+await rm(resolve(dist, 'src/flight.js'), { force: true });
 for (const file of ['index.html', 'Bajo la mirada cinemática.png']) await copyFile(resolve(root, file), resolve(dist, file));
 for (const dir of ['src', 'assets']) await cp(resolve(root, dir), resolve(dist, dir), { recursive: true });
 await mkdir(resolve(dist, 'vendor'), { recursive: true });
