@@ -20,6 +20,7 @@ test('continuous materials and source-anchored local interactions',async({page})
   await ready(page);await page.locator('#matter').fill('100');await expect.poll(async()=>(await state(page)).material).toBe(1);await page.screenshot({path:'test-results/desktop-particles.png'});
   await page.locator('#matter').fill('200');await expect.poll(async()=>(await state(page)).material).toBe(2);await page.screenshot({path:'test-results/desktop-ascii.png'});
   await page.locator('#matter').fill('0');await expect.poll(async()=>(await state(page)).material).toBe(0);
+  await page.screenshot({path:'test-results/desktop-photo.png'});
   await page.locator('#reset').click();await expect.poll(async()=>(await state(page)).material).toBe(1.35);
   await page.locator('[data-focus="1"]').click();await expect.poll(async()=>(await state(page)).focusAmount).toBeGreaterThan(.95);expect((await state(page)).focus).toBe(1);await page.screenshot({path:'test-results/local-ascii.png'});
   await page.locator('[data-focus="1"]').click();await expect.poll(async()=>(await state(page)).focusAmount).toBe(0);
@@ -51,6 +52,19 @@ test('mobile: one-finger orbit, pinch zoom, large hit targets and landscape',asy
   await page.locator('#reset').tap();await expect.poll(async()=>(await state(page)).orbit.zoom).toBe(1);
   const hit=await page.locator('[data-focus="1"]').boundingBox();expect(hit.width).toBeGreaterThanOrEqual(44);await page.locator('[data-focus="1"]').tap();await expect.poll(async()=>(await state(page)).focusAmount).toBeGreaterThan(.95);await page.screenshot({path:'test-results/mobile-local-ascii.png'});
   await page.locator('#reset').tap();await page.setViewportSize({width:844,height:390});await expect.poll(async()=>(await state(page)).focusAmount).toBe(0);await page.screenshot({path:'test-results/mobile-landscape.png'});await expect(page.locator('#reset')).toBeInViewport();await context.close();
+});
+
+test('brows remain in the sampled image and the nebula surrounds it in depth',async({page})=>{
+  await ready(page);
+  const composition=await page.evaluate(async()=>{
+    const {scene:s}=await import('/src/app.js'),p=s.field.geometry.attributes.position,d=s.field.geometry.attributes.aDust;
+    const brows=[0,0];
+    for(let i=0;i<p.count;i++)if(d.getX(i)===0&&p.getY(i)>s.aspect*16*.62&&Math.abs(p.getX(i))>7&&Math.abs(p.getX(i))<12)brows[p.getX(i)<0?0:1]++;
+    const centers=s.nebula.geometry.attributes.aCenter,z=Array.from({length:centers.count},(_,i)=>centers.getZ(i));
+    return {brows,near:Math.max(...z),far:Math.min(...z),drawCalls:s.renderer.info.render.calls};
+  });
+  expect(composition.brows[0]).toBeGreaterThan(100);expect(composition.brows[1]).toBeGreaterThan(100);
+  expect(composition.near).toBeGreaterThan(3);expect(composition.far).toBeLessThan(-40);expect(composition.drawCalls).toBeLessThan(10);
 });
 
 test('missing WebGL and context loss provide the local photographic fallback',async({page})=>{

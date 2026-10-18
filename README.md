@@ -2,6 +2,8 @@
 
 Experiencia artística local construida con Three.js y JavaScript. Una lente fotográfica curva, con dos capas posteriores, convierte los píxeles originales en polvo y caracteres. La vista inicial reconstruye los ojos con una mezcla de partículas y ASCII; la fotografía se revela moviendo Materia hacia Imagen. Volver al origen recupera la composición transformada. La cámara orbita alrededor del centro fijo de la imagen; rueda y pellizco modifican la distancia orbital.
 
+La nebulosa rodea la mirada con nubes a distintas profundidades, filamentos y polvo lejano. Sus colores proceden de la piel y los reflejos de los ojos. Las nubes responden a las ondas y a la iluminación local; al orbitar cambian sus superposiciones. El encuadre conserva las cejas disponibles en la fotografía y los bordes se dispersan sin una máscara ovalada que las recorte.
+
 ## Iniciar
 
 Requiere Node.js 20.11 o posterior. En PowerShell:
@@ -35,7 +37,7 @@ El deslizador mezcla **imagen → partículas → ASCII**. El giro horizontal es
 - `prefers-reduced-motion` inicia en pausa y elimina las transiciones animadas. Reanudar es una elección explícita del visitante.
 - La pausa detiene el reloj de los materiales y la inercia pendiente. Órbita, zoom y mezcla siguen disponibles. Sin interacción, no mantiene un bucle de renderizado.
 - Una sola geometría de puntos, geometría curva compartida entre capas y texturas reutilizadas. Resolución limitada a 1.8× en escritorio y 1.5× en móvil; objetivos máximos de 60 y 30 fps respectivamente. No son garantías de rendimiento para cualquier dispositivo.
-- La muestra es menos densa en móvil. Los materiales se animan en la GPU. El polvo y el halo se extraen de los colores y bordes de la foto; no hay una galaxia independiente de la imagen.
+- La muestra es menos densa en móvil. Los materiales se animan en la GPU. Las nubes usan una textura de densidad procedural generada una vez y una sola llamada de dibujo: 104 instancias en escritorio y 64 en móvil. El polvo y la paleta de las nubes se extraen de la foto.
 - La pestaña oculta y el diálogo de ayuda suspenden la escena. Si WebGL2 falta o se pierde el contexto, aparece la fotografía local y se ocultan los controles 3D.
 
 ## Validación
