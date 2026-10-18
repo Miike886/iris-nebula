@@ -21,8 +21,8 @@ export class IrisScene {
     this.time=0; this.material=.35; this.targetMaterial=.35; this.hover=0; this.frame=0; this.last=0; this.paint=0; this.ready=false;
     this.controller=new AbortController(); this.zone=-1; this.suspended=false;
     this.resources=[]; this.zones=[
-      {position:{x:-7.6,y:.6,z:7},target:{x:-7.5,y:0,z:0}},
-      {position:{x:12,y:2,z:6},target:{x:7.5,y:0,z:0}},
+      {position:{x:-7.6,y:.2,z:this.mobile?13:9},target:{x:-7.5,y:-.7,z:0}},
+      {position:{x:12,y:2,z:this.mobile?13:9},target:{x:7.5,y:-.7,z:0}},
       {position:{x:2,y:6,z:-7},target:{x:1,y:4,z:-17}},
       {position:{x:-17,y:5,z:-14},target:{x:0,y:0,z:0}}
     ];
@@ -55,8 +55,8 @@ export class IrisScene {
     sample.width=this.mobile?210:330;sample.height=Math.round(sample.width*this.aspect);
     const sc=sample.getContext('2d',{willReadFrequently:true});sc.drawImage(crop,0,0,sample.width,sample.height);
     const pixels=sc.getImageData(0,0,sample.width,sample.height).data;
-    const positions=[],homes=[],colors=[],seeds=[],kinds=[];
-    const add=(p,home,color,kind)=>{positions.push(...p);homes.push(...home);colors.push(...color);seeds.push(random());kinds.push(kind);};
+    const positions=[],homes=[],colors=[],seeds=[],kinds=[],flows=[];
+    const add=(p,home,color,kind,flow=[0,0])=>{positions.push(...p);homes.push(...home);colors.push(...color);seeds.push(random());kinds.push(kind);flows.push(...flow);};
     const palette=[];
     for(let y=0;y<sample.height;y++)for(let x=0;x<sample.width;x++){
       const k=(y*sample.width+x)*4;
@@ -84,7 +84,7 @@ export class IrisScene {
       const original=palette[Math.floor(random()*palette.length)]||[.6,.4,.3];
       const cool=strand===2||strand===5;
       const color=cool?[original[2]*.45+.08,original[1]*.85+.18,original[0]*.8+.23]:[original[0]*1.03+.08,original[1]*.8+.07,original[2]*.66+.04];
-      add(p,p,color,i%29===0?2:1);
+      add(p,p,color,1,[t,phase]);
     }
     for(let i=0;i<(this.mobile?1400:3000);i++){
       const angle=random()*Math.PI*2,radius=1+random()*5;
@@ -92,10 +92,10 @@ export class IrisScene {
       add(p,p,[.25+random()*.2,.56+random()*.3,.62+random()*.3],2);
     }
     for(let i=0;i<(this.mobile?650:1400);i++){
-      const p=[(random()-.5)*100,(random()-.5)*65,(random()-.5)*100];add(p,p,[.35,.44,.5],1);
+      const p=[(random()-.5)*100,(random()-.5)*65,(random()-.5)*100];add(p,p,[.35,.44,.5],3);
     }
     const geometry=this.own(new THREE.BufferGeometry());
-    for(const [name,values,itemSize]of[['position',positions,3],['aHome',homes,3],['aColor',colors,3],['aSeed',seeds,1],['aKind',kinds,1]])geometry.setAttribute(name,new THREE.Float32BufferAttribute(values,itemSize));
+    for(const [name,values,itemSize]of[['position',positions,3],['aHome',homes,3],['aColor',colors,3],['aSeed',seeds,1],['aKind',kinds,1],['aFlow',flows,2]])geometry.setAttribute(name,new THREE.Float32BufferAttribute(values,itemSize));
     geometry.computeBoundingSphere();
     const atlas=document.createElement('canvas');atlas.width=512;atlas.height=64;
     const ac=atlas.getContext('2d');ac.font='48px monospace';ac.fillStyle='#fff';ac.textAlign='center';ac.textBaseline='middle';
@@ -111,7 +111,7 @@ export class IrisScene {
       const u=col/cols,v=row/rows,seed=random();const edge=Math.pow(Math.abs(v-.5)*2,2);
       const offset=[(random()-.5)*edge*4,(random()-.5)*edge*3,(random()-.5)*(1.6+edge*8)];
       for(const [dx,dy]of[[0,0],[1,0],[1,1],[0,0],[1,1],[0,1]]){
-        const a=u+(dx*.97+.015)/cols,b=v+(dy*.97+.015)/rows;
+        const a=u+dx/cols,b=v+dy/rows;
         positions.push((a-.5)*32,(b-.5)*32*this.aspect,0);uvs.push(a,b);offsets.push(...offset);seeds.push(seed);
       }
     }
@@ -140,7 +140,7 @@ export class IrisScene {
   setMaterial(value){this.targetMaterial=clamp(value,0,2);this.invalidate();this.notify();}
   travel(amount){this.flight.move(0,0,amount);this.invalidate();}
   hold(direction,active){active?this.held.add(direction):this.held.delete(direction);this.invalidate();}
-  setPaused(value){this.paused=value;this.keys.clear();this.held.clear();this.invalidate();this.notify();}
+  setPaused(value){this.paused=value;if(value)this.flight.goal=null;this.keys.clear();this.held.clear();this.invalidate();this.notify();}
   reset(){this.flight.reset();this.targetMaterial=.35;this.zone=-1;this.hover=0;this.pointer.set(5,5);if(this.uniforms)this.uniforms.uPulse.value=-100;this.invalidate();this.notify();}
   visit(){this.zone=(this.zone+1)%this.zones.length;const z=this.zones[this.zone];this.flight.visit(z.position,z.target,this.reduced||this.paused);this.invalidate();this.notify();}
   notify(){this.onChange?.({paused:this.paused,material:this.targetMaterial,reduced:this.reduced});}
@@ -185,7 +185,7 @@ export class IrisScene {
     this.frame=0;if(!this.ready||this.destroyed||this.suspended||document.hidden)return;
     const interval=this.mobile?1000/30:1000/45;if(now-this.paint<interval){this.invalidate();return;}
     const dt=this.last?Math.min((now-this.last)/1000,.05):.016;this.last=now;this.paint=now;
-    if(!this.paused&&!this.reduced)this.time+=dt;
+    if(!this.paused)this.time+=dt;
     const down=(...names)=>names.some(n=>this.keys.has(n)||this.held.has(n))?1:0;
     const f=down('w','arrowup','forward')-down('s','arrowdown','back'),r=down('d','arrowright','right')-down('a','arrowleft','left'),u=down('e','up')-down('q','down');
     const length=Math.max(1,Math.hypot(f,r,u));if(f||r||u)this.flight.move(r*dt*7/length,u*dt*7/length,f*dt*7/length);
@@ -193,7 +193,7 @@ export class IrisScene {
     this.material+=(this.targetMaterial-this.material)*easing;if(Math.abs(this.targetMaterial-this.material)<.001)this.material=this.targetMaterial;
     this.syncCamera();this.uniforms.uTime.value=this.time;this.uniforms.uMatter.value=this.material;this.uniforms.uHover.value=this.hover;
     this.renderer.render(this.scene,this.camera);
-    if((!this.paused&&!this.reduced)||f||r||u||flying||this.material!==this.targetMaterial)this.invalidate();
+    if(!this.paused||f||r||u||flying||this.material!==this.targetMaterial)this.invalidate();
   }
   suspend(value){this.suspended=value;this.clearInput();if(value){cancelAnimationFrame(this.frame);this.frame=0;}else this.invalidate();}
   destroy(){this.destroyed=true;cancelAnimationFrame(this.frame);this.controller.abort();this.resizeObserver.disconnect();this.resources.forEach(r=>r.dispose());this.renderer.dispose();}
