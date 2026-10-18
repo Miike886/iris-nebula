@@ -1,6 +1,20 @@
 const $=id=>document.getElementById(id);
 const canvas=$('universe'),matter=$('matter'),help=$('help');
 let scene,failed=false;
+// Some touch browsers suppress a compatibility click immediately after a drag.
+// Handle a real, stationary touch release once; preserve native keyboard clicks.
+function activate(button,action){
+  let touch=null,lastTouch=-1000;
+  button.addEventListener('pointerdown',event=>{if(event.pointerType==='touch')touch={id:event.pointerId,x:event.clientX,y:event.clientY};});
+  button.addEventListener('pointercancel',()=>{touch=null;});
+  button.addEventListener('pointerup',event=>{
+    if(!touch||touch.id!==event.pointerId)return;
+    const moved=Math.hypot(event.clientX-touch.x,event.clientY-touch.y);touch=null;
+    if(moved>10||button.disabled)return;
+    event.preventDefault();lastTouch=performance.now();action();
+  });
+  button.addEventListener('click',event=>{if(event.detail>0&&performance.now()-lastTouch<600)return;action();});
+}
 const updateUI=state=>{
   matter.value=Math.round(state.material*100);matter.style.setProperty('--progress',`${state.material*50}%`);
   const label=state.material===0?'Imagen':state.material===1?'Partículas':state.material===2?'ASCII':state.material<1?'Disolución':'Caracteres';
@@ -21,15 +35,17 @@ try{
   if(!failed){$('loading').hidden=true;document.body.dataset.renderer='webgl';scene.notify();}
 }catch(error){console.error('Iris Nebula:',error);fallback();}
 matter.addEventListener('input',()=>scene?.setMaterial(Number(matter.value)/100));
-$('forward').addEventListener('click',()=>scene?.zoom(.85));$('back').addEventListener('click',()=>scene?.zoom(1/.85));
-$('reset').addEventListener('click',()=>{scene?.reset();$('announcement').textContent='Encuadre e imagen iniciales restaurados.';});
-$('pause').addEventListener('click',()=>scene?.setPaused(!scene.paused));
-document.querySelectorAll('[data-focus]').forEach(button=>button.addEventListener('click',()=>{scene?.activate(Number(button.dataset.focus));$('announcement').textContent=button.getAttribute('aria-pressed')==='true'?button.getAttribute('aria-label'):'Transformación local cerrada.';}));
+activate($('forward'),()=>scene?.zoom(.85));activate($('back'),()=>scene?.zoom(1/.85));
+activate($('reset'),()=>{scene?.reset();$('announcement').textContent='Encuadre e imagen iniciales restaurados.';});
+activate($('pause'),()=>scene?.setPaused(!scene.paused));
+document.querySelectorAll('[data-focus]').forEach(button=>activate(button,()=>{scene?.activate(Number(button.dataset.focus));$('announcement').textContent=button.getAttribute('aria-pressed')==='true'?button.getAttribute('aria-label'):'Transformación local cerrada.';}));
 const dismissHint=()=>document.body.classList.add('exploring');
 canvas.addEventListener('pointerdown',dismissHint,{once:true});canvas.addEventListener('wheel',dismissHint,{once:true,passive:true});canvas.addEventListener('keydown',dismissHint,{once:true});
-$('help-open').addEventListener('click',()=>{scene?.suspend(true);help.showModal();});
-help.addEventListener('close',()=>{if(!failed)scene?.suspend(false);});$('help-close').addEventListener('click',()=>help.close());
-$('help-start').addEventListener('click',()=>{help.close();canvas.focus({preventScroll:true});});
+activate($('help-open'),()=>{scene?.suspend(true);help.showModal();});
+help.addEventListener('close',()=>{if(!failed)scene?.suspend(false);});activate($('help-close'),()=>help.close());
+activate($('help-start'),()=>{help.close();canvas.focus({preventScroll:true});});
 help.addEventListener('click',event=>{if(event.target!==help)return;const r=help.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)help.close();});
 window.addEventListener('pagehide',()=>scene?.suspend(true));window.addEventListener('pageshow',()=>{if(!failed)scene?.suspend(false);});
 export {scene};
+document.addEventListener('pointerdown',()=>document.body.classList.remove('keyboard-navigation'),{passive:true});
+document.addEventListener('keydown',event=>{if(event.key==='Tab')document.body.classList.add('keyboard-navigation');});

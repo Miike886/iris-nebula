@@ -4,7 +4,7 @@ const fields = /* glsl */`
 uniform float uTime, uMatter, uHover, uPulse, uFocusAmount, uFocusMode;
 uniform vec3 uPointer, uHit, uFocus;
 float localMatter(vec3 p) {
-  float focus = exp(-dot(p.xy-uFocus.xy,p.xy-uFocus.xy)/13.);
+  float focus = 1.-smoothstep(2.3,5.5,distance(p.xy,uFocus.xy));
   return max(uMatter, uFocusAmount*uFocusMode*focus);
 }
 float wave(vec3 p) {
@@ -45,6 +45,9 @@ void main(){
   float rim=pow(1.-abs(dot(normalize(cameraPosition-vWorld),normalize(vNormal))),2.);
   float shade=.89+.11*max(0.,dot(normalize(vNormal),normalize(vec3(-.4,.6,1.))));
   vec3 color=original*shade + original*light*.22;
+  vec3 halfLight=normalize(normalize(vec3(-.4,.6,1.))+normalize(cameraPosition-vWorld));
+  float sheen=pow(max(0.,dot(normalize(vNormal),halfLight)),48.);
+  color+=vec3(.075,.067,.05)*sheen;
   color+=vec3(.14,.12,.085)*rim*.35;
   float alpha=edge*(photo*.98+.012);
   if(uLayer>0.) { color=mix(original,vec3(.055,.085,.074),.6);alpha=edge*.055*(1.-matter*.35); }
@@ -74,11 +77,12 @@ void main(){
   vec4 view=modelViewMatrix*vec4(p,1.);
   gl_Position=projectionMatrix*view;
   vGlyph=smoothstep(.95,1.85,matter);
-  float size=mix(2.3,8.2,vGlyph);
+  float size=mix(2.3,10.4,vGlyph);
   if(aDust>.5)size=1.7+aSeed*1.5;
   gl_PointSize=clamp(size*uPixelRatio*(uHeight/800.)*32./max(1.,-view.z),1.,36.);
   float lum=dot(aColor,vec3(.2126,.7152,.0722));
   vAlpha=aDust>.5 ? (.08+aSeed*.35) : form*(.35+lum*.65);
+  if(aDust<.5)vAlpha*=mix(1.,step(.42,aSeed),vGlyph);
   vAlpha*=1.+influence*.7;
   vColor=aColor;vIndex=aGlyph;
 }`;

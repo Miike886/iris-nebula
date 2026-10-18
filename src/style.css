@@ -5,3 +5,4 @@
 @media(max-width:360px){.tools{gap:3px;padding:12px 8px}.matter-control{width:140px}.wordmark{font-size:8px}}
 @media(max-height:500px) and (orientation:landscape){header{top:8px}.bottom{bottom:12px}#hint{display:none}.tools{padding:8px 12px}.range-ends{display:none}.matter-control input{height:22px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+canvas:focus-visible{outline:none}body.keyboard-navigation canvas:focus-visible{outline:1px solid var(--accent);outline-offset:-3px}
