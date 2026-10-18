@@ -5,4 +5,7 @@ const dist = resolve(root, 'dist');
 await mkdir(dist, { recursive: true });
 for (const file of ['index.html', 'Bajo la mirada cinemática.png']) await copyFile(resolve(root, file), resolve(dist, file));
 for (const dir of ['src', 'assets']) await cp(resolve(root, dir), resolve(dist, dir), { recursive: true });
+await mkdir(resolve(dist, 'vendor'), { recursive: true });
+for (const file of ['three.module.js', 'three.core.js']) await copyFile(resolve(root, 'node_modules/three/build', file), resolve(dist, 'vendor', file));
+await copyFile(resolve(root, 'node_modules/three/LICENSE'), resolve(dist, 'vendor/LICENSE'));
 console.log('Sitio estático generado en dist/.');
