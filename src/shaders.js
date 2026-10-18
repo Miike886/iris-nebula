@@ -1,11 +1,13 @@
 // The surface and its sampled matter share deformation, illumination and local
 // transformation fields. Neither camera movement nor pointer input changes UVs.
 const fields = /* glsl */`
-uniform float uTime, uMatter, uHover, uPulse, uFocusAmount, uFocusMode;
+uniform float uTime, uMatter, uHover, uPulse, uFocusAmount, uFocusMode, uReveal;
 uniform vec3 uPointer, uHit, uFocus;
 float localMatter(vec3 p) {
   float focus = 1.-smoothstep(2.3,5.5,distance(p.xy,uFocus.xy));
-  return mix(uMatter, uFocusMode, uFocusAmount*focus);
+  float matter=mix(uMatter, uFocusMode, uFocusAmount*focus);
+  float reveal=(1.-smoothstep(1.6,3.7,distance(p.xy,uPointer.xy)))*uReveal;
+  return mix(matter,0.,reveal);
 }
 float wave(vec3 p) {
   float age=uTime-uPulse;
@@ -125,9 +127,57 @@ void main(){
   float tile=floor(vSeed*3.999);
   vec2 uv=vec2((tile+vUv.x)/4.,vUv.y);
   float density=texture2D(uCloud,uv).a;
-  float glow=.48+.12*sin(uTime*.12+vSeed*20.);
+  float glow=.065+.012*sin(uTime*.12+vSeed*20.);
   float alpha=density*glow*vLight*(.8+uMatter*.15);
-  gl_FragColor=vec4(vColor,alpha);
+  float grey=dot(vColor,vec3(.2126,.7152,.0722));
+  gl_FragColor=vec4(mix(vec3(grey),vColor,.38),alpha);
+}`;
+export const starVertex = fields + /* glsl */`
+uniform float uPixelRatio;
+attribute vec3 aColor;
+attribute float aSeed;
+varying vec3 vColor;
+varying float vAlpha,vFlare;
+void main(){
+  vec3 p=position;
+  float response=wave(p);
+  p.xy+=normalize(p.xy-uHit.xy+vec2(.01))*response*.4;
+  vec4 view=modelViewMatrix*vec4(p,1.);
+  gl_Position=projectionMatrix*view;
+  vFlare=step(.985,aSeed);
+  gl_PointSize=uPixelRatio*(.9+pow(aSeed,6.)*2.6+vFlare*3.)*clamp(80./max(1.,-view.z),.65,1.3);
+  float light=exp(-distance(p.xy,uPointer.xy)*.08)*uHover;
+  vAlpha=(.4+aSeed*.6)*(1.+sin(uTime*.25+aSeed*87.)*.12)+max(0.,response)*.35+light*.22;
+  vColor=aColor;
+}`;
+export const starFragment = /* glsl */`
+varying vec3 vColor;
+varying float vAlpha,vFlare;
+void main(){
+  vec2 p=gl_PointCoord-.5;
+  float r=length(p),core=exp(-r*r*30.);
+  float crossGlow=exp(-min(abs(p.x),abs(p.y))*55.)*(1.-smoothstep(.1,.5,r))*.45;
+  gl_FragColor=vec4(vColor,(core+crossGlow*vFlare)*vAlpha*(1.-smoothstep(.42,.5,r)));
+}`;
+export const signatureVertex = /* glsl */`
+uniform float uSignature,uTime,uPixelRatio,uHeight;
+attribute vec3 aScatter;
+attribute float aSeed;
+varying float vAlpha;
+void main(){
+  vec3 p=position+aScatter*(1.-uSignature);
+  p.z+=sin(uTime*.5+aSeed*6.)*.06*(1.-uSignature);
+  vec4 view=modelViewMatrix*vec4(p,1.);
+  gl_Position=projectionMatrix*view;
+  gl_PointSize=clamp(1.9*uPixelRatio*(uHeight/800.)*32./max(1.,-view.z),1.2,5.);
+  vAlpha=mix(.025,.85,uSignature)*(.65+aSeed*.35);
+}`;
+export const signatureFragment = /* glsl */`
+varying float vAlpha;
+void main(){
+  vec2 p=gl_PointCoord-.5;
+  float glow=exp(-dot(p,p)*14.)*(1.-smoothstep(.35,.5,length(p)));
+  gl_FragColor=vec4(.9,.8,.64,glow*vAlpha);
 }`;
 export const fieldFragment = /* glsl */`
 uniform sampler2D uAtlas;

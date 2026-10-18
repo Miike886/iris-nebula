@@ -22,6 +22,7 @@ const updateUI=state=>{
   $('pause').setAttribute('aria-pressed',String(state.paused));$('pause').setAttribute('aria-label',state.paused?'Reanudar movimiento':'Pausar movimiento');
   $('pause-label').textContent=state.paused?'Reanudar':'Pausar';$('pause-icon').textContent=state.paused?'▷':'Ⅱ';
   document.querySelectorAll('[data-focus]').forEach(button=>button.setAttribute('aria-pressed',String(Number(button.dataset.focus)===state.focus)));
+  $('signature').setAttribute('aria-pressed',String(state.signature));
 };
 function fallback(message){
   if(failed)return;failed=true;scene?.destroy();canvas.hidden=true;$('fallback').hidden=false;$('loading').hidden=true;document.body.classList.add('fallback');
@@ -38,6 +39,7 @@ matter.addEventListener('input',()=>scene?.setMaterial(Number(matter.value)/100)
 activate($('forward'),()=>scene?.zoom(.85));activate($('back'),()=>scene?.zoom(1/.85));
 activate($('reset'),()=>{scene?.reset();$('announcement').textContent='Encuadre y materia iniciales restaurados.';});
 activate($('pause'),()=>scene?.setPaused(!scene.paused));
+activate($('signature'),()=>{scene?.toggleSignature();$('announcement').textContent=scene?.signatureTarget?'Bere y un corazón aparecen como una constelación de partículas.':'La constelación vuelve al polvo.';});
 document.querySelectorAll('[data-focus]').forEach(button=>activate(button,()=>{scene?.activate(Number(button.dataset.focus));$('announcement').textContent=button.getAttribute('aria-pressed')==='true'?button.getAttribute('aria-label'):'Transformación local cerrada.';}));
 const dismissHint=()=>document.body.classList.add('exploring');
 canvas.addEventListener('pointerdown',dismissHint,{once:true});canvas.addEventListener('wheel',dismissHint,{once:true,passive:true});canvas.addEventListener('keydown',dismissHint,{once:true});

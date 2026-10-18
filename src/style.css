@@ -6,3 +6,7 @@
 @media(max-height:500px) and (orientation:landscape){header{top:8px}.bottom{bottom:12px}#hint{display:none}.tools{padding:8px 12px}.range-ends{display:none}.matter-control input{height:22px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 canvas:focus-visible{outline:none}body.keyboard-navigation canvas:focus-visible{outline:1px solid var(--accent);outline-offset:-3px}
+canvas.revealing,canvas.revealing:active{cursor:crosshair}
+.signature-mark{font:18px Georgia,serif;color:#c8c5b5;text-shadow:0 0 12px #ddcfaa55;transition:color .2s,transform .2s}
+.signature-hotspot[aria-pressed=true] .signature-mark,.signature-hotspot:hover .signature-mark{color:#f1dcba;transform:scale(1.15)}
+.signature-hotspot[aria-pressed=true] .tooltip{opacity:0}

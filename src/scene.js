@@ -1,7 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { Orbit } from './orbit.js';
 import { clamp, randomGenerator } from './math.js';
-import { surfaceVertex, surfaceFragment, fieldVertex, fieldFragment, cloudVertex, cloudFragment } from './shaders.js';
+import { surfaceVertex, surfaceFragment, fieldVertex, fieldFragment, cloudVertex, cloudFragment, starVertex, starFragment, signatureVertex, signatureFragment } from './shaders.js';
 
 const lensHeight = (x,y) => 1.9*(1-(x/16)**2)+.45*(1-(y/5.2)**2);
 const INITIAL_MATTER = 1.35;
@@ -14,7 +14,7 @@ export class IrisScene {
     this.reduced=this.motionQuery.matches; this.paused=this.reduced;
     this.orbit=new Orbit(innerWidth/innerHeight);
     this.scene=new THREE.Scene(); this.scene.background=new THREE.Color('#080c0e');
-    this.camera=new THREE.PerspectiveCamera(42,1,.1,220);
+    this.camera=new THREE.PerspectiveCamera(42,1,.1,360);
     this.renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,this.mobile?1.5:1.8));
     this.renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -25,6 +25,8 @@ export class IrisScene {
     this.time=0;this.material=INITIAL_MATTER;this.targetMaterial=INITIAL_MATTER;this.hover=0;
     this.frame=0;this.last=0;this.paint=0;this.ready=false;this.suspended=false;
     this.focusIndex=-1;this.focusTarget=0;this.focusUntil=0;
+    this.revealTarget=0;this.signatureTarget=0;this.holdTimer=0;this.holding=false;
+    this.signatureAnchor=new THREE.Vector3(9,-6.8,3);
     this.hotspots=[new THREE.Vector3(-7.4,-1.65,lensHeight(-7.4,-1.65)+.18),new THREE.Vector3(7.3,-1.65,lensHeight(7.3,-1.65)+.18)];
     this.hotspotElements=[...document.querySelectorAll('[data-focus]')];
     this.bind();this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(canvas);this.resize();
@@ -49,7 +51,8 @@ export class IrisScene {
     this.aspect=crop.height/crop.width;
     this.uniforms={uTime:{value:0},uMatter:{value:INITIAL_MATTER},uHover:{value:0},uPointer:{value:new THREE.Vector3()},uPulse:{value:-100},uHit:{value:new THREE.Vector3()},uFocus:{value:new THREE.Vector3()},uFocusAmount:{value:0},uFocusMode:{value:1},uPhoto:{value:this.photo},uPixelRatio:{value:this.renderer.getPixelRatio()},uHeight:{value:this.height},uLayer:{value:0}};
     this.uniforms.uPhotoHalfHeight={value:16*this.aspect};
-    this.makeSurface();this.makeMatter(crop);this.makeNebula(crop);
+    this.uniforms.uReveal={value:0};this.uniforms.uSignature={value:0};
+    this.makeSurface();this.makeMatter(crop);this.makeNebula(crop);this.makeStars();this.makeSignature();
     this.ready=true;this.syncCamera();this.renderer.compile(this.scene,this.camera);
     if(this.shaderError)throw new Error('No se pudieron compilar los materiales de la lente.');
     this.invalidate();this.notify();
@@ -85,8 +88,7 @@ export class IrisScene {
       if(lum<.035)continue;
       const px=(u-.5)*32,py=(.5-v)*32*this.aspect,pz=lensHeight(px,py);
       if(r<1.02)add(px,py,pz+.04,color,0);
-      // Dust is sampled from the photograph's perimeter and local contrast.
-      // Its colors and origin are retained; there is no separate star field.
+      // Local dust retains the photograph's perimeter, contrast and colors.
       const neighbor=Math.min(pixels.length-4,k+4);
       const contrast=Math.abs(pixels[k]-pixels[neighbor])/255;
       if((r>.45&&random()<.50)||(contrast>.10&&random()<.25)){
@@ -160,6 +162,33 @@ export class IrisScene {
     const material=this.own(new THREE.ShaderMaterial({uniforms:{...this.uniforms,uCloud:{value:texture}},vertexShader:cloudVertex,fragmentShader:cloudFragment,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
     this.nebula=new THREE.Mesh(geometry,material);this.nebula.frustumCulled=false;this.nebula.renderOrder=0;this.scene.add(this.nebula);
   }
+  makeStars(){
+    const random=randomGenerator(173),positions=[],seeds=[],colors=[];
+    const count=this.mobile?9000:18000;
+    for(let i=0;i<count;i++){
+      const azimuth=random()*Math.PI*2,cosine=random()*2-1,radius=65+random()*100,sine=Math.sqrt(1-cosine*cosine);
+      positions.push(radius*sine*Math.cos(azimuth),radius*cosine,radius*sine*Math.sin(azimuth));
+      const warmth=random();colors.push(.65+warmth*.3,.73+warmth*.17,.88-warmth*.16);seeds.push(random());
+    }
+    const geometry=this.own(new THREE.BufferGeometry());geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('aColor',new THREE.Float32BufferAttribute(colors,3));geometry.setAttribute('aSeed',new THREE.Float32BufferAttribute(seeds,1));
+    const material=this.own(new THREE.ShaderMaterial({uniforms:this.uniforms,vertexShader:starVertex,fragmentShader:starFragment,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
+    this.stars=new THREE.Points(geometry,material);this.stars.frustumCulled=false;this.stars.renderOrder=-1;this.scene.add(this.stars);
+  }
+  makeSignature(){
+    // The name is sampled into points, then assembled from a small dust cloud.
+    const canvas=document.createElement('canvas');canvas.width=240;canvas.height=90;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.font='italic 56px Georgia';ctx.fillText('Bere',14,65);
+    const data=ctx.getImageData(0,0,240,90).data,positions=[],scatter=[],seeds=[],random=randomGenerator(725);
+    const add=(x,y)=>{positions.push(x,y,Math.sin(x)*.08);scatter.push((random()-.5)*8,(random()-.5)*3,(random()-.5)*4);seeds.push(random());};
+    for(let y=0;y<90;y+=2)for(let x=0;x<156;x+=2)if(data[(y*240+x)*4+3]>100)add((x-80)/42,(45-y)/42);
+    for(let i=0;i<90;i++){
+      const t=i/90*Math.PI*2,x=16*Math.sin(t)**3,y=13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t);
+      add(2.15+x*.023,.04+y*.023);
+    }
+    const geometry=this.own(new THREE.BufferGeometry());geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('aScatter',new THREE.Float32BufferAttribute(scatter,3));geometry.setAttribute('aSeed',new THREE.Float32BufferAttribute(seeds,1));
+    const material=this.own(new THREE.ShaderMaterial({uniforms:this.uniforms,vertexShader:signatureVertex,fragmentShader:signatureFragment,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
+    this.signature=new THREE.Points(geometry,material);this.signature.position.copy(this.signatureAnchor);this.signature.position.y-=this.mobile?1.8:1.3;if(this.mobile)this.signature.scale.setScalar(1.5);this.signature.renderOrder=4;this.signature.frustumCulled=false;this.scene.add(this.signature);
+  }
   resize(){
     const {width,height}=this.canvas.getBoundingClientRect();this.width=width;this.height=height;
     this.camera.aspect=width/Math.max(1,height);this.camera.updateProjectionMatrix();this.orbit.resize(this.camera.aspect);
@@ -171,12 +200,16 @@ export class IrisScene {
       const projected=this.hotspots[i].clone().project(this.camera),button=this.hotspotElements[i];
       if(button){button.style.left=`${(projected.x*.5+.5)*this.width}px`;button.style.top=`${(-projected.y*.5+.5)*this.height}px`;button.hidden=Math.abs(projected.x)>1.05||Math.abs(projected.y)>1.05;}
     }
+    const signatureButton=document.getElementById('signature');
+    if(signatureButton){const p=this.signatureAnchor.clone().project(this.camera);signatureButton.style.left=`${(p.x*.5+.5)*this.width}px`;signatureButton.style.top=`${(-p.y*.5+.5)*this.height}px`;signatureButton.hidden=Math.abs(p.x)>1||Math.abs(p.y)>1;}
   }
   samplePointer(){
     if(!this.ready)return false;this.ray.setFromCamera(this.pointer,this.camera);
     const intersection=this.ray.intersectObject(this.surface,false)[0];
     if(intersection){const uv=intersection.uv;if(Math.abs(uv.x*2-1)**8+Math.abs(uv.y*2-1)**12<1.05){this.pointerTarget.copy(intersection.point);this.hover=1;return true;}}
-    this.hover=0;return false;
+    // Empty space also receives waves; keep the interaction on the central plane.
+    const hit=this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,0,1),0),this.pointerTarget);
+    this.hover=hit ? .35 : 0;return Boolean(hit);
   }
   setMaterial(value){this.targetMaterial=clamp(value,0,2);this.invalidate();this.notify();}
   zoom(factor){this.orbit.zoom(factor);this.invalidate();}
@@ -186,10 +219,12 @@ export class IrisScene {
     this.invalidate();this.notify();
   }
   pulse(point){if(this.paused)return;this.uniforms.uHit.value.copy(point);this.uniforms.uPulse.value=this.time;}
+  toggleSignature(){this.signatureTarget=1-this.signatureTarget;this.pulse(this.signatureAnchor);this.invalidate();this.notify();}
+  cancelHold(){clearTimeout(this.holdTimer);this.holdTimer=0;this.holding=false;this.revealTarget=0;this.canvas.classList.remove('revealing');}
   setPaused(value){this.paused=value;if(value)this.orbit.stop();this.invalidate();this.notify();}
-  reset(){this.orbit.reset();this.targetMaterial=INITIAL_MATTER;this.focusIndex=-1;this.focusTarget=0;this.hover=0;this.pointer.set(5,5);if(this.uniforms)this.uniforms.uPulse.value=-100;this.invalidate();this.notify();}
-  notify(){this.onChange?.({paused:this.paused,material:this.targetMaterial,focus:this.focusIndex});}
-  clearInput(){this.pointers.clear();this.hover=0;this.last=0;}
+  reset(){this.cancelHold();this.signatureTarget=0;this.orbit.reset();this.targetMaterial=INITIAL_MATTER;this.focusIndex=-1;this.focusTarget=0;this.hover=0;this.pointer.set(5,5);if(this.uniforms)this.uniforms.uPulse.value=-100;this.invalidate();this.notify();}
+  notify(){this.onChange?.({paused:this.paused,material:this.targetMaterial,focus:this.focusIndex,signature:this.signatureTarget===1});}
+  clearInput(){this.cancelHold();this.pointers.clear();this.hover=0;this.last=0;this.invalidate();}
   bind(){
     const options={signal:this.controller.signal},c=this.canvas;
     const pointer=e=>{const r=c.getBoundingClientRect();this.pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);};
@@ -198,29 +233,43 @@ export class IrisScene {
       this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,multi:this.pointers.size>0});
       if(this.pointers.size>1)for(const p of this.pointers.values())p.multi=true;
       pointer(e);this.syncCamera();this.samplePointer();this.invalidate();
+      this.cancelHold();
+      if(this.pointers.size===1)this.holdTimer=setTimeout(()=>{if(this.pointers.size===1){this.orbit.stop();this.holding=true;this.revealTarget=1;this.canvas.classList.add('revealing');this.invalidate();}},380);
     },options);
     c.addEventListener('pointermove',e=>{
       pointer(e);const old=this.pointers.get(e.pointerId);
       if(old){
+        if(!this.holding&&Math.hypot(e.clientX-old.startX,e.clientY-old.startY)>7){clearTimeout(this.holdTimer);this.holdTimer=0;}
         if(this.pointers.size===2){const other=[...this.pointers.entries()].find(([id])=>id!==e.pointerId)[1];const before=Math.hypot(old.x-other.x,old.y-other.y),after=Math.hypot(e.clientX-other.x,e.clientY-other.y);if(before>10&&after>10)this.orbit.zoom(before/after);}
-        else this.orbit.rotate(e.clientX-old.x,e.clientY-old.y);
+        else if(!this.holding)this.orbit.rotate(e.clientX-old.x,e.clientY-old.y);
         Object.assign(old,{x:e.clientX,y:e.clientY});
       }
       this.samplePointer();this.invalidate();
     },options);
     const release=e=>{
       const old=this.pointers.get(e.pointerId);
-      if(e.type==='pointerup'&&old&&!old.multi&&Math.hypot(e.clientX-old.startX,e.clientY-old.startY)<6&&this.samplePointer())this.pulse(this.pointerTarget);
+      if(e.type==='pointerup'&&old&&!old.multi&&!this.holding&&Math.hypot(e.clientX-old.startX,e.clientY-old.startY)<6&&this.samplePointer())this.pulse(this.pointerTarget);
+      this.cancelHold();
       this.pointers.delete(e.pointerId);if(c.hasPointerCapture(e.pointerId))c.releasePointerCapture(e.pointerId);if(e.pointerType!=='mouse')this.hover=0;this.invalidate();
     };
-    c.addEventListener('pointerup',release,options);c.addEventListener('pointercancel',release,options);c.addEventListener('lostpointercapture',e=>this.pointers.delete(e.pointerId),options);
+    c.addEventListener('pointerup',release,options);c.addEventListener('pointercancel',release,options);c.addEventListener('lostpointercapture',e=>{this.pointers.delete(e.pointerId);this.cancelHold();this.invalidate();},options);
     c.addEventListener('pointerleave',()=>{this.hover=0;this.invalidate();},options);
     c.addEventListener('wheel',e=>{e.preventDefault();const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?this.height:1);this.zoom(Math.exp(clamp(delta,-180,180)*.0016));},{...options,passive:false});
     c.addEventListener('keydown',e=>{
-      const k=e.key.toLowerCase();if(!['arrowleft','arrowright','arrowup','arrowdown','+','=','-','r',' '].includes(k))return;e.preventDefault();
+      const k=e.key.toLowerCase();if(!['arrowleft','arrowright','arrowup','arrowdown','+','=','-','r',' ','v','b'].includes(k))return;e.preventDefault();
+      if(k==='v'&&!e.repeat){this.pointerTarget.copy(this.hotspots[0]);this.hover=1;this.revealTarget=1;}
+      if(k==='b'&&!e.repeat)this.toggleSignature();
+      if(k.startsWith('arrow')&&this.revealTarget){
+        this.pointerTarget.x=clamp(this.pointerTarget.x+(k==='arrowright'?.8:k==='arrowleft'?-.8:0),-16,16);
+        this.pointerTarget.y=clamp(this.pointerTarget.y+(k==='arrowup'?.8:k==='arrowdown'?-.8:0),-16*this.aspect,16*this.aspect);
+        this.invalidate();return;
+      }
       if(k==='arrowleft')this.orbit.rotate(25,0);if(k==='arrowright')this.orbit.rotate(-25,0);if(k==='arrowup')this.orbit.rotate(0,-22);if(k==='arrowdown')this.orbit.rotate(0,22);
       if(k==='+'||k==='=')this.zoom(.88);if(k==='-')this.zoom(1/.88);if(k==='r')this.reset();if(k===' '&&!e.repeat)this.setPaused(!this.paused);this.invalidate();
     },options);
+    c.addEventListener('keyup',e=>{if(e.key.toLowerCase()==='v'){this.revealTarget=0;this.invalidate();}},options);
+    c.addEventListener('contextmenu',e=>e.preventDefault(),options);
+    c.addEventListener('blur',()=>this.clearInput(),options);
     window.addEventListener('blur',()=>this.clearInput(),options);
     document.addEventListener('visibilitychange',()=>{this.clearInput();if(document.hidden){cancelAnimationFrame(this.frame);this.frame=0;}else this.invalidate();},options);
     this.motionQuery.addEventListener('change',e=>{this.reduced=e.matches;if(e.matches)this.setPaused(true);},options);
@@ -236,14 +285,15 @@ export class IrisScene {
     this.material+=(this.targetMaterial-this.material)*a;if(Math.abs(this.targetMaterial-this.material)<.001)this.material=this.targetMaterial;
     if(this.focusTarget&&this.time>this.focusUntil){this.focusTarget=0;this.focusIndex=-1;this.notify();}
     const uniforms=this.uniforms;
+    for(const [key,target]of[['uReveal',this.revealTarget],['uSignature',this.signatureTarget]]){uniforms[key].value+=(target-uniforms[key].value)*a;if(Math.abs(target-uniforms[key].value)<.001)uniforms[key].value=target;}
     uniforms.uFocusAmount.value+=(this.focusTarget-uniforms.uFocusAmount.value)*a;
     if(Math.abs(this.focusTarget-uniforms.uFocusAmount.value)<.001)uniforms.uFocusAmount.value=this.focusTarget;
     uniforms.uHover.value+=(this.hover-uniforms.uHover.value)*a;
     if(Math.abs(this.hover-uniforms.uHover.value)<.001)uniforms.uHover.value=this.hover;
     uniforms.uPointer.value.lerp(this.pointerTarget,a);uniforms.uTime.value=this.time;uniforms.uMatter.value=this.material;
     this.syncCamera();this.renderer.render(this.scene,this.camera);
-    if(!this.paused||moving||this.material!==this.targetMaterial||uniforms.uFocusAmount.value!==this.focusTarget||uniforms.uHover.value!==this.hover)this.invalidate();
+    if(!this.paused||moving||this.material!==this.targetMaterial||uniforms.uFocusAmount.value!==this.focusTarget||uniforms.uHover.value!==this.hover||uniforms.uReveal.value!==this.revealTarget||uniforms.uSignature.value!==this.signatureTarget)this.invalidate();
   }
   suspend(value){this.suspended=value;this.clearInput();if(value){cancelAnimationFrame(this.frame);this.frame=0;}else this.invalidate();}
-  destroy(){this.destroyed=true;cancelAnimationFrame(this.frame);this.controller.abort();this.resizeObserver.disconnect();this.resources.forEach(r=>r.dispose());this.renderer.dispose();}
+  destroy(){this.destroyed=true;this.cancelHold();cancelAnimationFrame(this.frame);this.controller.abort();this.resizeObserver.disconnect();this.resources.forEach(r=>r.dispose());this.renderer.dispose();}
 }
