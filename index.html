@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#05080c">
-  <meta name="description" content="Iris Nebula. Un espacio de luz, fotografía y caracteres que puedes recorrer.">
+  <meta name="theme-color" content="#080c0e">
+  <meta name="description" content="Iris Nebula. Una imagen suspendida entre luz, partículas y caracteres.">
   <title>Iris Nebula</title>
   <link rel="icon" href="./assets/iris.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./src/style.css">
@@ -12,34 +12,24 @@
 </head>
 <body>
   <main>
-    <h1 class="sr-only">Iris Nebula — exploración 3D</h1>
-    <canvas id="universe" tabindex="0" aria-label="Universo 3D. Arrastra para mirar; WASD o flechas para desplazarte; Q y E para bajar y subir; rueda para avanzar; R para volver." aria-describedby="hint"></canvas>
-    <div id="fallback" hidden>
-      <img src="./Bajo%20la%20mirada%20cinem%C3%A1tica.png" alt="Fotografía original de los ojos que forman Iris Nebula">
-      <p id="fallback-message">Vista fotográfica. WebGL no está disponible.</p>
-    </div>
+    <h1 class="sr-only">Iris Nebula — lente fotográfica interactiva</h1>
+    <canvas id="universe" tabindex="0" aria-label="Imagen tridimensional. Arrastra o usa las flechas para orbitar. Rueda, pellizco o más y menos para acercarte. R vuelve al origen." aria-describedby="hint"></canvas>
+    <div id="fallback" hidden><img src="./Bajo%20la%20mirada%20cinem%C3%A1tica.png" alt="Fotografía original de los ojos de Iris Nebula"><p id="fallback-message">Vista fotográfica. La exploración 3D no está disponible.</p></div>
     <div class="shade" aria-hidden="true"></div>
     <header>
-      <span class="wordmark">IRIS <span>NEBULA</span></span>
-      <div class="top-actions">
-        <button id="pause" aria-label="Pausar movimiento" aria-pressed="false"><span id="pause-icon" aria-hidden="true">Ⅱ</span><span id="pause-label">Pausar</span></button>
-        <button id="help-open" class="icon-button" aria-label="Ayuda de navegación" aria-haspopup="dialog">?</button>
-      </div>
+      <span class="wordmark"><span class="brand-mark" aria-hidden="true">◈</span> IRIS <span>NEBULA</span></span>
+      <div class="top-actions"><button id="pause" aria-label="Pausar movimiento" aria-pressed="false"><span id="pause-icon" aria-hidden="true">Ⅱ</span><span id="pause-label">Pausar</span></button><button id="help-open" class="icon-button" aria-label="Ayuda de exploración" aria-haspopup="dialog">?</button></div>
     </header>
-    <p id="loading" role="status">Formando la materia<span aria-hidden="true"> ···</span></p>
-    <div class="touch-pad" role="group" aria-label="Desplazamiento de cámara">
-      <button data-move="forward" aria-label="Avanzar" title="Avanzar">↑</button>
-      <button data-move="left" aria-label="Desplazarse a la izquierda" title="Izquierda">←</button>
-      <span aria-hidden="true">·</span>
-      <button data-move="right" aria-label="Desplazarse a la derecha" title="Derecha">→</button>
-      <button data-move="back" aria-label="Retroceder" title="Retroceder">↓</button>
+    <p id="loading" role="status">Formando la imagen ···</p>
+    <div class="interactions" aria-label="Transformaciones locales">
+      <button class="hotspot" data-focus="0" aria-label="Dispersar el iris izquierdo en partículas" aria-pressed="false"><span class="hotspot-mark" aria-hidden="true">+</span><span class="tooltip">Dispersar</span></button>
+      <button class="hotspot" data-focus="1" aria-label="Revelar caracteres en el iris derecho" aria-pressed="false"><span class="hotspot-mark" aria-hidden="true">+</span><span class="tooltip">Revelar ASCII</span></button>
     </div>
     <div class="bottom">
-      <p id="hint"><span class="desktop-hint">Arrastra para mirar · WASD para recorrer · Rueda para avanzar</span><span class="mobile-hint">Arrastra para mirar · Pellizca para avanzar</span></p>
+      <p id="hint"><span class="desktop-hint">Arrastra para orbitar <i>·</i> Rueda para acercarte</span><span class="mobile-hint">Gira con un dedo <i>·</i> Acerca con dos</span></p>
       <nav class="tools" aria-label="Controles de exploración">
-        <button id="visit" title="Recorrer otra zona" aria-label="Recorrer otra zona"><span aria-hidden="true">✧</span><span>Recorrer</span></button>
-        <div class="matter-control"><label for="matter" id="matter-label">Materia</label><input type="range" id="matter" min="0" max="200" value="35" aria-label="Mezcla de partículas, ASCII y fotografía" aria-valuetext="Partículas y ASCII"></div>
-        <div class="travel-control"><button id="back" class="icon-button" title="Retroceder" aria-label="Retroceder 2 unidades">−</button><button id="forward" class="icon-button" title="Avanzar" aria-label="Avanzar 2 unidades">+</button></div>
+        <div class="matter-control"><div class="matter-caption"><label for="matter">MATERIA</label><span id="matter-label">Imagen</span></div><input type="range" id="matter" min="0" max="200" value="0" aria-label="Transformar imagen en partículas y ASCII" aria-valuetext="Imagen"><div class="range-ends" aria-hidden="true"><span>Imagen</span><span>ASCII</span></div></div>
+        <div class="zoom-control"><button id="back" class="icon-button" title="Alejar" aria-label="Alejar">−</button><button id="forward" class="icon-button" title="Acercar" aria-label="Acercar">+</button></div>
         <button id="reset" class="icon-button" title="Volver al origen (R)" aria-label="Volver al origen">↺</button>
       </nav>
     </div>
@@ -48,16 +38,14 @@
   </main>
   <dialog id="help" aria-labelledby="help-title">
     <button id="help-close" class="icon-button close" aria-label="Cerrar ayuda">×</button>
-    <h2 id="help-title">Explora el espacio.</h2>
+    <h2 id="help-title">Otra perspectiva.</h2>
     <dl>
-      <div><dt>Mirar</dt><dd>Arrastra con el ratón o un dedo.</dd></div>
-      <div><dt>Recorrer</dt><dd>WASD o flechas. Q / E para bajar / subir. En móvil, usa las flechas de la pantalla.</dd></div>
-      <div><dt>Avanzar</dt><dd>Rueda, pellizco o botones − / +.</dd></div>
-      <div><dt>Desplazar</dt><dd>Mayús + arrastre, botón derecho o dos dedos para moverte lateral y verticalmente.</dd></div>
-      <div><dt>Transformar</dt><dd>Desliza Materia: partículas → ASCII → fotografía. Acércate a los iris para revelar la imagen. Recorrer te lleva a otra zona.</dd></div>
+      <div><dt>Girar</dt><dd>Arrastra con el ratón o un dedo. Las flechas del teclado también orbitan alrededor de la imagen.</dd></div>
+      <div><dt>Acercar</dt><dd>Rueda, pellizco con dos dedos o botones − / +.</dd></div>
+      <div><dt>Transformar</dt><dd>Desliza Materia: imagen → partículas → ASCII. Toca los dos puntos sobre los iris para revelar una variación local; vuelve a tocarlos para cerrarla.</dd></div>
     </dl>
-    <p>Un toque propaga una onda. R vuelve al origen. La pausa detiene la animación; puedes seguir navegando.</p>
-    <button id="help-start">Entrar <span aria-hidden="true">↗</span></button>
+    <p>El cursor ilumina y ondula la superficie. Un toque propaga una onda. R o ↺ restaura el encuadre. La pausa detiene las animaciones y permite seguir explorando.</p>
+    <button id="help-start">Explorar <span aria-hidden="true">↗</span></button>
   </dialog>
 </body>
 </html>

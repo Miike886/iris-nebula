@@ -1,102 +1,97 @@
-export const fieldVertex = /* glsl */`
-uniform float uTime, uMatter, uPixelRatio, uHeight, uPulse, uHover;
-uniform vec3 uRayOrigin, uRayDirection, uHit;
-attribute vec3 aHome, aColor;
-attribute vec2 aFlow;
-attribute float aSeed, aKind;
+// The surface and its sampled matter share deformation, illumination and local
+// transformation fields. Neither camera movement nor pointer input changes UVs.
+const fields = /* glsl */`
+uniform float uTime, uMatter, uHover, uPulse, uFocusAmount, uFocusMode;
+uniform vec3 uPointer, uHit, uFocus;
+float localMatter(vec3 p) {
+  float focus = exp(-dot(p.xy-uFocus.xy,p.xy-uFocus.xy)/13.);
+  return max(uMatter, uFocusAmount*uFocusMode*focus);
+}
+float wave(vec3 p) {
+  float age=uTime-uPulse;
+  if(age<0. || age>4.) return 0.;
+  float d=distance(p.xy,uHit.xy);
+  return sin(d*3.-age*8.)*exp(-pow((d-age*4.)/2.,2.))*exp(-age*.7);
+}
+float pointerLight(vec3 p) {
+  return exp(-dot(p.xy-uPointer.xy,p.xy-uPointer.xy)/6.)*uHover;
+}
+`;
+
+export const surfaceVertex = fields + /* glsl */`
+varying vec2 vUv;
+varying vec3 vWorld,vNormal;
+void main(){
+  vec3 p=position;
+  p.z+=wave(p)*.24 + pointerLight(p)*.13;
+  vUv=uv; vWorld=(modelMatrix*vec4(p,1.)).xyz;
+  vNormal=normalize(mat3(modelMatrix)*normal);
+  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);
+}`;
+export const surfaceFragment = fields + /* glsl */`
+uniform sampler2D uPhoto;
+uniform float uLayer;
+varying vec2 vUv;
+varying vec3 vWorld,vNormal;
+void main(){
+  vec2 oval=(vUv-.5)*2.;
+  float r=dot(oval,oval);
+  float edge=1.-smoothstep(.70,1.,r);
+  if(edge<.015)discard;
+  vec3 original=texture2D(uPhoto,vUv).rgb;
+  float matter=localMatter(vWorld);
+  float photo=1.-smoothstep(.08,1.12,matter);
+  float light=pointerLight(vWorld);
+  float rim=pow(1.-abs(dot(normalize(cameraPosition-vWorld),normalize(vNormal))),2.);
+  float shade=.89+.11*max(0.,dot(normalize(vNormal),normalize(vec3(-.4,.6,1.))));
+  vec3 color=original*shade + original*light*.22;
+  color+=vec3(.14,.12,.085)*rim*.35;
+  float alpha=edge*(photo*.98+.012);
+  if(uLayer>0.) { color=mix(original,vec3(.055,.085,.074),.6);alpha=edge*.055*(1.-matter*.35); }
+  gl_FragColor=vec4(color,alpha);
+  #include <colorspace_fragment>
+}`;
+
+export const fieldVertex = fields + /* glsl */`
+uniform float uPixelRatio,uHeight;
+attribute vec3 aColor,aScatter;
+attribute float aSeed,aDust,aGlyph;
 varying vec3 vColor;
-varying float vAlpha, vGlyph, vSeed, vKind;
-void main() {
-  float photo = max(0., uMatter - 1.);
-  float nearEye = 1. - smoothstep(8., 22., min(distance(cameraPosition, vec3(-7.5,0.,2.)), distance(cameraPosition, vec3(7.5,0.,2.))));
-  vec3 p = position;
-  float flowFade = 1.;
-  if(aKind > .5 && aKind < 1.5) {
-    float t = fract(aFlow.x * .5 + .5 + uTime * .012) * 2. - 1.;
-    float t0 = aFlow.x, phase = aFlow.y;
-    vec3 path = vec3(t*25.+sin(phase+t*5.)*2.,sin(t*3.4+phase)*4.7,cos(t*2.9+phase)*11.);
-    vec3 original = vec3(t0*25.+sin(phase+t0*5.)*2.,sin(t0*3.4+phase)*4.7,cos(t0*2.9+phase)*11.);
-    p += path-original;
-    flowFade = 1.-smoothstep(.86,1.,abs(t));
+varying float vAlpha,vGlyph,vIndex;
+void main(){
+  float matter=localMatter(position);
+  float form=smoothstep(.02,1.,matter);
+  vec3 p=position;
+  float dispersion=(.12+sin(uTime*.27+aSeed*12.)*.05)*form;
+  p+=aScatter*dispersion;
+  if(aDust>.5) {
+    p+=aScatter*(.55+.12*sin(uTime*.32+aSeed*21.));
+    p.z+=sin(uTime*.25+aSeed*33.)*.2;
   }
-  if(aKind < .5) {
-    p = mix(p, aHome, max(photo * .96, nearEye * .82));
-  }
-  float motion = aKind < .5 ? .12 : .42;
-  p += vec3(sin(uTime*.25+aSeed*37.+p.y*.2), cos(uTime*.19+aSeed*29.+p.x*.16), sin(uTime*.16+aSeed*17.)) * motion;
-  vec3 toPoint = p-uRayOrigin;
-  float alongRay = max(0., dot(toPoint,uRayDirection));
-  vec3 fromRay = p-(uRayOrigin+uRayDirection*alongRay);
-  float d = length(fromRay);
-  p += normalize(fromRay+vec3(.001)) * (1.-smoothstep(0.,2.5,d)) * uHover * 1.1;
-  float age = uTime-uPulse;
-  float waveDistance = distance(p,uHit);
-  float wave = sin(waveDistance*3.-age*9.) * exp(-pow((waveDistance-age*5.)/2.2,2.)) * exp(-age*.8);
-  if(age>=0. && age<4.) p += normalize(p-uHit+vec3(.001))*wave*.8;
-  vec4 view = modelViewMatrix*vec4(p,1.);
-  gl_Position = projectionMatrix*view;
-  float glyph = 1.-abs(uMatter-1.);
-  float nearArchive = 1.-smoothstep(4.,16.,distance(cameraPosition,vec3(1.,4.,-15.)));
-  vGlyph = max(glyph,nearArchive*.9);
-  if(aKind>1.5 && aKind<2.5) vGlyph = max(.7,vGlyph);
-  if(aKind>2.5) vGlyph = 0.;
-  float size = aKind<.5 ? mix(3.0,10.,vGlyph) : mix(2.,8.,vGlyph);
-  gl_PointSize = clamp(size * uPixelRatio * (uHeight/800.) * 22./max(1.,-view.z), 1., 62.);
-  float lum = dot(aColor,vec3(.2126,.7152,.0722));
-  vAlpha = (aKind < .5 ? (.4+lum*.6)*(1.-photo*.8) : .62) * smoothstep(0.35,1.8,-view.z);
-  vAlpha *= 1.-smoothstep(65.,120.,-view.z);
-  vAlpha *= flowFade;
-  if(aKind<.5) vAlpha *= 1.-nearEye*.78;
-  vAlpha *= 1. + (1.-smoothstep(0.,2.5,d))*uHover*.5;
-  vColor = aColor; vSeed = aSeed; vKind = aKind;
+  float influence=pointerLight(p);
+  p.xy+=normalize(p.xy-uPointer.xy+vec2(.001))*influence*(.28+form*.42);
+  p.z+=wave(p)*(.25+form*.5)+influence*.2;
+  vec4 view=modelViewMatrix*vec4(p,1.);
+  gl_Position=projectionMatrix*view;
+  vGlyph=smoothstep(.95,1.85,matter);
+  float size=mix(2.3,8.2,vGlyph);
+  if(aDust>.5)size=1.7+aSeed*1.5;
+  gl_PointSize=clamp(size*uPixelRatio*(uHeight/800.)*32./max(1.,-view.z),1.,36.);
+  float lum=dot(aColor,vec3(.2126,.7152,.0722));
+  vAlpha=aDust>.5 ? (.08+aSeed*.35) : form*(.35+lum*.65);
+  vAlpha*=1.+influence*.7;
+  vColor=aColor;vIndex=aGlyph;
 }`;
 export const fieldFragment = /* glsl */`
 uniform sampler2D uAtlas;
 varying vec3 vColor;
-varying float vAlpha,vGlyph,vSeed,vKind;
+varying float vAlpha,vGlyph,vIndex;
 void main(){
   vec2 p=gl_PointCoord-.5;
-  float dotAlpha=exp(-dot(p,p)*23.)*(1.-smoothstep(.3,.5,length(p)));
-  float glyphIndex=floor(fract(vSeed*13.)*8.);
-  vec2 uv=vec2((glyphIndex+gl_PointCoord.x)/8.,1.-gl_PointCoord.y);
-  float letter=texture2D(uAtlas,uv).a;
-  float alpha=mix(dotAlpha,letter,vGlyph)*vAlpha;
-  if(alpha<.018) discard;
-  gl_FragColor=vec4(vColor*(vKind<.5?1.2:1.55),alpha);
-}`;
-export const fragmentVertex = /* glsl */`
-uniform float uTime,uMatter;
-attribute vec3 aOffset;
-attribute float aSeed;
-varying vec2 vUv;
-varying vec3 vWorld;
-void main(){
-  vUv=uv;
-  float photo=max(0.,uMatter-1.);
-  float nearEye=1.-smoothstep(8.,22.,min(distance(cameraPosition,vec3(-7.5,0.,2.)),distance(cameraPosition,vec3(7.5,0.,2.))));
-  float formation=max(photo,nearEye*.9);
-  vec3 p=position+aOffset*(1.-formation);
-  p.z+=sin(uTime*.22+aSeed*12.)*.12*(1.-formation);
-  vWorld=p;
-  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);
-}`;
-export const fragmentFragment = /* glsl */`
-uniform sampler2D uPhoto;
-uniform float uMatter,uHover;
-uniform vec3 uRayOrigin,uRayDirection;
-varying vec2 vUv;
-varying vec3 vWorld;
-void main(){
-  vec3 color=texture2D(uPhoto,vUv).rgb;
-  float edge=smoothstep(0.,.12,vUv.x)*(1.-smoothstep(.88,1.,vUv.x))*smoothstep(0.,.16,vUv.y)*(1.-smoothstep(.8,1.,vUv.y));
-  float nearEye=1.-smoothstep(8.,22.,min(distance(cameraPosition,vec3(-7.5,0.,2.)),distance(cameraPosition,vec3(7.5,0.,2.))));
-  float along=max(0.,dot(vWorld-uRayOrigin,uRayDirection));
-  float reveal=(1.-smoothstep(.3,2.3,distance(vWorld,uRayOrigin+uRayDirection*along)))*uHover;
-  float photo=max(0.,uMatter-1.);
-  float ascii=1.-abs(uMatter-1.);
-  float alpha=max(max(.15*(1.-ascii),photo*.97),max(nearEye*.7,reveal*.65));
-  alpha*=edge*smoothstep(.6,2.,distance(cameraPosition,vWorld));
-  if(alpha<.015)discard;
-  gl_FragColor=vec4(color,alpha);
-  #include <colorspace_fragment>
+  float point=exp(-dot(p,p)*21.)*(1.-smoothstep(.3,.5,length(p)));
+  vec2 uv=vec2((vIndex+gl_PointCoord.x)/8.,1.-gl_PointCoord.y);
+  float character=texture2D(uAtlas,uv).a;
+  float alpha=mix(point,character,vGlyph)*vAlpha;
+  if(alpha<.01)discard;
+  gl_FragColor=vec4(vColor,alpha);
 }`;
