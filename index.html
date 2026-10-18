@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#090b0c">
+  <meta name="description" content="Iris Nebula. Explora una fotografía que se transforma en partículas, caracteres y luz.">
+  <title>Iris Nebula — Materia de una mirada</title>
+  <link rel="icon" href="./assets/iris.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./src/style.css">
+  <script type="module" src="./src/app.js"></script>
+</head>
+<body>
+  <main class="experience">
+    <div class="scene-wrap" id="scene-wrap">
+      <div class="fallback" id="fallback" hidden><img src="./Bajo%20la%20mirada%20cinem%C3%A1tica.png" alt="Fotografía de unos ojos, fuente de la composición"></div>
+      <canvas id="universe" tabindex="0" aria-label="Campo visual interactivo. Arrastra para explorar, usa la rueda o los botones para acercarte. Con teclado: flechas para desplazar, más y menos para cambiar la escala, R para volver al origen." aria-describedby="scene-description"></canvas>
+    </div>
+    <div class="vignette" aria-hidden="true"></div>
+    <header class="masthead">
+      <a class="wordmark" href="./" aria-label="Iris Nebula, inicio"><img src="./assets/iris.svg" alt="" width="30" height="30"><span>IRIS <b>NEBULA</b></span></a>
+      <span class="edition">UNA EXPLORACIÓN VISUAL</span>
+      <div class="header-actions">
+        <button class="text-button" id="pause" aria-pressed="false"><span id="pause-symbol" aria-hidden="true">Ⅱ</span><span id="pause-label">Pausar</span></button>
+        <button class="help-button" id="help-open" aria-label="Cómo explorar" aria-haspopup="dialog">?</button>
+      </div>
+    </header>
+    <section class="intro" aria-labelledby="title">
+      <p class="eyebrow"><span></span> MATERIA DE UNA MIRADA</p>
+      <h1 id="title">Una imagen.<br><em>Infinitas escalas.</em></h1>
+      <p class="intro-caption">Acércate. Altera. Descubre.</p>
+    </section>
+    <div class="side-note" aria-hidden="true">FOTOGRAFÍA ↔ MATERIA</div>
+    <div class="scene-status" aria-hidden="true"><span class="status-dot"></span><span id="scene-status">CAMPO VIVO</span></div>
+    <div class="bottom-ui">
+      <p class="gesture-hint" id="scene-description"><span aria-hidden="true">↔</span> <span class="desktop-hint">Arrastra para explorar</span><span class="mobile-hint">Mueve un dedo para explorar</span><i></i><span class="desktop-hint">Rueda para acercarte</span><span class="mobile-hint">Pellizca para acercarte</span></p>
+      <section class="control-dock" aria-label="Controles de la experiencia">
+        <div class="material-control">
+          <div class="control-heading"><label for="matter">TRANSFORMAR LA MATERIA</label><span id="matter-label">Partículas + ASCII</span></div>
+          <input id="matter" type="range" min="0" max="200" value="38" step="1" aria-valuetext="Partículas con un 38 por ciento de ASCII">
+          <div class="material-presets" role="group" aria-label="Materiales">
+            <button data-material="0" aria-pressed="false"><span aria-hidden="true">⠿</span> Partículas</button>
+            <button data-material="100" aria-pressed="false"><span aria-hidden="true">⌘</span> ASCII</button>
+            <button data-material="200" aria-pressed="false"><span aria-hidden="true">▧</span> Fotografía</button>
+          </div>
+        </div>
+        <div class="scale-control"><label for="scale">ESCALA</label><div class="scale-row"><button id="zoom-out" class="icon-button" aria-label="Alejar">−</button><output id="scale" aria-live="off">1.0<span>×</span></output><button id="zoom-in" class="icon-button" aria-label="Acercar">+</button></div><span class="scale-name" id="scale-name">Campo</span></div>
+        <button class="reset-button" id="reset"><span aria-hidden="true">↺</span><span>Volver al origen</span></button>
+      </section>
+      <footer><span>UNA IMAGEN, MUCHAS FORMAS DE MIRAR.</span><span class="footer-right"><span class="tiny-cross" aria-hidden="true">✳</span> HECHO DE LUZ Y CARACTERES</span></footer>
+    </div>
+    <p class="sr-only" id="announcement" role="status"></p>
+    <noscript><div class="no-script">Activa JavaScript para explorar la imagen.<img src="./Bajo%20la%20mirada%20cinem%C3%A1tica.png" alt="Fotografía original de los ojos"></div></noscript>
+  </main>
+  <dialog id="help" aria-labelledby="help-title">
+    <button class="dialog-close icon-button" id="help-close" aria-label="Cerrar ayuda">×</button>
+    <p class="eyebrow">IRIS NEBULA / GUÍA</p>
+    <h2 id="help-title">Todo empieza<br>con un gesto.</h2>
+    <p class="guide-intro">Cada gesto transforma la imagen y revela otra escala del mismo universo.</p>
+    <dl>
+      <div><dt>Explora</dt><dd>Arrastra la escena. El cursor aparta la materia; un toque propaga una onda.</dd></div>
+      <div><dt>Acércate</dt><dd>Usa la rueda, pellizca con dos dedos o pulsa + y −. Las flechas desplazan la escena cuando tiene el foco.</dd></div>
+      <div><dt>Transforma</dt><dd>Desliza el control de materia para mezclar partículas, ASCII y fotografía.</dd></div>
+      <div><dt>Contempla</dt><dd>Pausa el movimiento con el botón superior. Puedes seguir explorando. R devuelve la vista al origen.</dd></div>
+    </dl>
+    <button class="guide-start" id="help-start">Explorar la imagen <span aria-hidden="true">↗</span></button>
+  </dialog>
+</body>
+</html>
