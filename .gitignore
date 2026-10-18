@@ -3,3 +3,7 @@ dist/
 .DS_Store
 *.log
 /Bajo la mirada cinemática.png
+test-results/
+playwright-report/
+.vercel/
+.env*
