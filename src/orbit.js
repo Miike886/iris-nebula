@@ -9,7 +9,7 @@ export class Orbit {
     this.resize(aspect);
   }
   resize(aspect) {
-    const fill = aspect < .8 ? 1.16 : .81;
+    const fill = aspect < .8 ? .94 : .81;
     const verticalFov = 42 * Math.PI / 180;
     this.homeDistance = Math.max(23, 16 / (Math.tan(verticalFov / 2) * aspect * fill));
   }

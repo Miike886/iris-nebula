@@ -35,8 +35,8 @@ varying vec2 vUv;
 varying vec3 vWorld,vNormal;
 void main(){
   vec2 oval=(vUv-.5)*2.;
-  float r=dot(oval,oval);
-  float edge=1.-smoothstep(.70,1.,r);
+  float r=pow(abs(oval.x),8.)+pow(abs(oval.y),12.);
+  float edge=1.-smoothstep(.82,1.06,r);
   if(edge<.015)discard;
   vec3 original=texture2D(uPhoto,vUv).rgb;
   float matter=localMatter(vWorld);
@@ -56,7 +56,7 @@ void main(){
 }`;
 
 export const fieldVertex = fields + /* glsl */`
-uniform float uPixelRatio,uHeight;
+uniform float uPixelRatio,uHeight,uPhotoHalfHeight;
 attribute vec3 aColor,aScatter;
 attribute float aSeed,aDust,aGlyph;
 varying vec3 vColor;
@@ -66,6 +66,9 @@ void main(){
   float form=smoothstep(.02,1.,matter);
   vec3 p=position;
   float dispersion=(.12+sin(uTime*.27+aSeed*12.)*.05)*form;
+  // Let the boundary become wisps without masking out the brow pixels.
+  float boundary=max(abs(position.x)/16.,abs(position.y)/uPhotoHalfHeight);
+  dispersion+=smoothstep(.76,1.03,boundary)*.7*form;
   p+=aScatter*dispersion;
   if(aDust>.5) {
     p+=aScatter*(.55+.12*sin(uTime*.32+aSeed*21.));
@@ -78,13 +81,53 @@ void main(){
   gl_Position=projectionMatrix*view;
   vGlyph=smoothstep(.95,1.85,matter);
   float size=mix(2.3,10.4,vGlyph);
-  if(aDust>.5)size=1.7+aSeed*1.5;
+  if(aDust>.5){size=1.7+aSeed*1.5;vGlyph=0.;}
+  if(aDust>1.5)size=2.+pow(aSeed,8.)*7.;
   gl_PointSize=clamp(size*uPixelRatio*(uHeight/800.)*32./max(1.,-view.z),1.,36.);
   float lum=dot(aColor,vec3(.2126,.7152,.0722));
   vAlpha=aDust>.5 ? (.08+aSeed*.35) : form*(.35+lum*.65);
+  if(aDust>1.5)vAlpha=(.35+aSeed*.55)*(1.+sin(uTime*.4+aSeed*40.)*.12);
   if(aDust<.5)vAlpha*=mix(1.,step(.42,aSeed),vGlyph);
   vAlpha*=1.+influence*.7;
   vColor=aColor;vIndex=aGlyph;
+}`;
+
+// Instanced cloud billboards have fixed world centers and real depth. Their
+// density drifts slowly; orbiting reveals different overlaps and cavities.
+export const cloudVertex = fields + /* glsl */`
+attribute vec3 aCenter,aColor;
+attribute vec2 aScale;
+attribute float aSeed;
+varying vec2 vUv;
+varying vec3 vColor;
+varying float vSeed,vLight;
+void main(){
+  vec3 p=aCenter;
+  p.x+=sin(uTime*.06+aSeed*18.)*.65;
+  p.y+=cos(uTime*.05+aSeed*12.)*.45;
+  float influence=pointerLight(p);
+  p.z+=wave(p)*.45;
+  vec4 view=modelViewMatrix*vec4(p,1.);
+  float angle=aSeed*6.283+sin(uTime*.035+aSeed*10.)*.06;
+  mat2 rotation=mat2(cos(angle),-sin(angle),sin(angle),cos(angle));
+  view.xy+=rotation*(position.xy*aScale);
+  gl_Position=projectionMatrix*view;
+  vUv=uv;vColor=aColor;vSeed=aSeed;
+  vLight=1.+influence*.7+uFocusAmount*.2*exp(-distance(p.xy,uFocus.xy)/14.);
+}`;
+export const cloudFragment = /* glsl */`
+uniform sampler2D uCloud;
+uniform float uTime,uMatter;
+varying vec2 vUv;
+varying vec3 vColor;
+varying float vSeed,vLight;
+void main(){
+  float tile=floor(vSeed*3.999);
+  vec2 uv=vec2((tile+vUv.x)/4.,vUv.y);
+  float density=texture2D(uCloud,uv).a;
+  float glow=.48+.12*sin(uTime*.12+vSeed*20.);
+  float alpha=density*glow*vLight*(.8+uMatter*.15);
+  gl_FragColor=vec4(vColor,alpha);
 }`;
 export const fieldFragment = /* glsl */`
 uniform sampler2D uAtlas;

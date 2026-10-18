@@ -1,7 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { Orbit } from './orbit.js';
 import { clamp, randomGenerator } from './math.js';
-import { surfaceVertex, surfaceFragment, fieldVertex, fieldFragment } from './shaders.js';
+import { surfaceVertex, surfaceFragment, fieldVertex, fieldFragment, cloudVertex, cloudFragment } from './shaders.js';
 
 const lensHeight = (x,y) => 1.9*(1-(x/16)**2)+.45*(1-(y/5.2)**2);
 const INITIAL_MATTER = 1.35;
@@ -33,21 +33,23 @@ export class IrisScene {
   async load(url){
     const image=new Image();image.src=url;await image.decode();if(this.destroyed)return;
     // Only the in-memory crop is changed; the local original remains untouched.
-    const probe=document.createElement('canvas');probe.width=120;probe.height=Math.round(image.height/image.width*120);
+    const probe=document.createElement('canvas');probe.width=384;probe.height=Math.round(image.height/image.width*384);
     const ctx=probe.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,probe.width,probe.height);
     const data=ctx.getImageData(0,0,probe.width,probe.height).data;
     let top=probe.height,bottom=0;
     for(let y=0;y<probe.height;y++){
       let sum=0;for(let x=0;x<probe.width;x++){const k=(y*probe.width+x)*4;sum+=data[k]+data[k+1]+data[k+2];}
-      if(sum/(probe.width*3)>19){top=Math.min(top,y);bottom=y;}
+      if(sum/(probe.width*3)>4){top=Math.min(top,y);bottom=y;}
     }
     if(bottom<=top){top=0;bottom=probe.height-1;}
+    top=Math.max(0,top-1);bottom=Math.min(probe.height-1,bottom+1);
     const crop=document.createElement('canvas');crop.width=image.width;crop.height=Math.round((bottom-top+1)/probe.height*image.height);
     crop.getContext('2d').drawImage(image,0,top/probe.height*image.height,image.width,crop.height,0,0,crop.width,crop.height);
     this.photo=this.own(new THREE.CanvasTexture(crop));this.photo.colorSpace=THREE.SRGBColorSpace;
     this.aspect=crop.height/crop.width;
     this.uniforms={uTime:{value:0},uMatter:{value:INITIAL_MATTER},uHover:{value:0},uPointer:{value:new THREE.Vector3()},uPulse:{value:-100},uHit:{value:new THREE.Vector3()},uFocus:{value:new THREE.Vector3()},uFocusAmount:{value:0},uFocusMode:{value:1},uPhoto:{value:this.photo},uPixelRatio:{value:this.renderer.getPixelRatio()},uHeight:{value:this.height},uLayer:{value:0}};
-    this.makeSurface();this.makeMatter(crop);this.makeHalo(crop);
+    this.uniforms.uPhotoHalfHeight={value:16*this.aspect};
+    this.makeSurface();this.makeMatter(crop);this.makeNebula(crop);
     this.ready=true;this.syncCamera();this.renderer.compile(this.scene,this.camera);
     if(this.shaderError)throw new Error('No se pudieron compilar los materiales de la lente.');
     this.invalidate();this.notify();
@@ -64,14 +66,6 @@ export class IrisScene {
       const material=this.own(new THREE.ShaderMaterial({uniforms,vertexShader:surfaceVertex,fragmentShader:surfaceFragment,transparent:true,depthWrite:false,side:THREE.DoubleSide}));
       const layer=new THREE.Mesh(geometry,material);layer.position.z=-i*.65;layer.scale.set(1+i*.013,1+i*.035,1);layer.renderOrder=1;this.scene.add(layer);
     }
-    // Two restrained contours make lens thickness legible while orbiting.
-    for(let layer=0;layer<2;layer++){
-      const points=[];
-      for(let i=0;i<=240;i++){const a=i/240*Math.PI*2,x=Math.cos(a)*15.8,y=Math.sin(a)*16*this.aspect;points.push(new THREE.Vector3(x,y,lensHeight(x,y)-layer*1.15));}
-      const g=this.own(new THREE.BufferGeometry().setFromPoints(points));
-      const m=this.own(new THREE.LineBasicMaterial({color:layer?'#789184':'#b9a58a',transparent:true,opacity:layer?.075:.11,depthWrite:false}));
-      this.scene.add(new THREE.Line(g,m));
-    }
   }
   makeMatter(crop){
     const random=randomGenerator(811),sample=document.createElement('canvas');sample.width=this.mobile?200:310;sample.height=Math.round(sample.width*this.aspect);
@@ -84,20 +78,25 @@ export class IrisScene {
       const lum=color[0]*.2126+color[1]*.7152+color[2]*.0722;glyph.push(Math.min(7,Math.floor(lum*9)));
     };
     for(let y=0;y<sample.height;y++)for(let x=0;x<sample.width;x++){
-      const u=(x+.5)/sample.width,v=(y+.5)/sample.height,r=(u*2-1)**2+(v*2-1)**2;
+      const u=(x+.5)/sample.width,v=(y+.5)/sample.height,r=Math.abs(u*2-1)**8+Math.abs(v*2-1)**12;
       if(r>1.04)continue;
       const k=(y*sample.width+x)*4,color=[pixels[k]/255,pixels[k+1]/255,pixels[k+2]/255];
       const lum=color[0]*.2126+color[1]*.7152+color[2]*.0722;
       if(lum<.035)continue;
       const px=(u-.5)*32,py=(.5-v)*32*this.aspect,pz=lensHeight(px,py);
-      if(r<.98)add(px,py,pz+.04,color,0);
+      if(r<1.02)add(px,py,pz+.04,color,0);
       // Dust is sampled from the photograph's perimeter and local contrast.
       // Its colors and origin are retained; there is no separate star field.
       const neighbor=Math.min(pixels.length-4,k+4);
       const contrast=Math.abs(pixels[k]-pixels[neighbor])/255;
-      if((r>.60&&random()<.38)||(contrast>.15&&random()<.16)){
-        const expansion=1.04+random()*.17;
-        add(px*expansion,py*expansion,pz+(random()-.5)*2.6,color.map(c=>Math.min(1,c*1.25+.06)),1);
+      if((r>.45&&random()<.50)||(contrast>.10&&random()<.25)){
+        const expansion=1.05+random()*.55;
+        add(px*expansion,py*expansion,pz+(random()-.5)*7,color.map(c=>Math.min(1,c*1.25+.06)),1);
+      }
+      // Sparse distant grains retain the photograph's color and source location.
+      if(random()<.035){
+        const spread=2+random()*5;
+        add(px*spread+Math.sin(py)*9,py*spread*(this.mobile?2:1.4),-8-random()*65,color,2);
       }
     }
     const geometry=this.own(new THREE.BufferGeometry());
@@ -110,14 +109,56 @@ export class IrisScene {
     const material=this.own(new THREE.ShaderMaterial({uniforms:this.uniforms,vertexShader:fieldVertex,fragmentShader:fieldFragment,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
     this.field=new THREE.Points(geometry,material);this.field.renderOrder=3;this.field.frustumCulled=false;this.scene.add(this.field);
   }
-  makeHalo(crop){
-    const soft=document.createElement('canvas');soft.width=512;soft.height=256;
-    const ctx=soft.getContext('2d');ctx.filter='blur(24px)';ctx.drawImage(crop,50,65,412,130);ctx.filter='none';
-    ctx.globalCompositeOperation='destination-in';
-    const mask=ctx.createRadialGradient(256,128,30,256,128,240);mask.addColorStop(0,'#fff');mask.addColorStop(1,'transparent');ctx.fillStyle=mask;ctx.fillRect(0,0,512,256);
-    const texture=this.own(new THREE.CanvasTexture(soft));texture.colorSpace=THREE.SRGBColorSpace;
-    const material=this.own(new THREE.SpriteMaterial({map:texture,transparent:true,opacity:.22,depthWrite:false,blending:THREE.AdditiveBlending}));
-    const halo=new THREE.Sprite(material);halo.position.z=-2.8;halo.scale.set(43,21.5,1);halo.renderOrder=0;this.scene.add(halo);
+  makeNebula(crop){
+    const random=randomGenerator(912);
+    // A small procedural density atlas is generated once, never per frame.
+    const size=128,atlas=document.createElement('canvas');atlas.width=size*4;atlas.height=size;
+    const ac=atlas.getContext('2d'),density=ac.createImageData(atlas.width,atlas.height);
+    const grid=Float32Array.from({length:64*64},()=>random());
+    const noise=(x,y)=>{
+      const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
+      const at=(a,b)=>grid[((b+64)%64)*64+(a+64)%64];
+      return (at(ix,iy)*(1-sx)+at(ix+1,iy)*sx)*(1-sy)+(at(ix,iy+1)*(1-sx)+at(ix+1,iy+1)*sx)*sy;
+    };
+    for(let tile=0;tile<4;tile++)for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+      const u=x/(size-1),v=y/(size-1),nx=u*4+tile*12,ny=v*4;
+      const warp=noise(nx*.7,ny*.7)*2;
+      const n=noise(nx+warp,ny+warp)*.55+noise(nx*2,ny*2)*.27+noise(nx*4,ny*4)*.13+noise(nx*8,ny*8)*.05;
+      const edge=Math.max(0,1-((u-.5)**2+(v-.5)**2)*4);
+      const alpha=Math.pow(edge,1.8)*Math.pow(Math.max(0,n-.25)*1.45,1.6);
+      const k=(y*atlas.width+tile*size+x)*4;density.data[k]=255;density.data[k+1]=255;density.data[k+2]=255;density.data[k+3]=Math.round(alpha*255);
+    }
+    ac.putImageData(density,0,0);
+    const texture=this.own(new THREE.CanvasTexture(atlas));
+    const sample=document.createElement('canvas');sample.width=96;sample.height=Math.round(96*this.aspect);
+    const context=sample.getContext('2d',{willReadFrequently:true});context.drawImage(crop,0,0,sample.width,sample.height);
+    const pixels=context.getImageData(0,0,sample.width,sample.height).data;
+    const highlights=[];
+    for(let k=0;k<pixels.length;k+=4)if(pixels[k+2]>pixels[k]*1.03&&pixels[k+2]>90)highlights.push(k/4);
+    const centers=[],colors=[],scales=[],seeds=[];
+    const count=this.mobile?64:104;
+    for(let i=0;i<count;i++){
+      let u=random(),v=random();
+      if(i%4===0&&highlights.length){const pixel=highlights[Math.floor(random()*highlights.length)];u=(pixel%sample.width+.5)/sample.width;v=(Math.floor(pixel/sample.width)+.5)/sample.height;}
+      const k=(Math.floor(v*sample.height)*sample.width+Math.floor(u*sample.width))*4;
+      const color=[pixels[k]/255,pixels[k+1]/255,pixels[k+2]/255];
+      const spread=1.5+random()*3.6,side=v<.5?1:-1;
+      const x=(u-.5)*32*spread;
+      const y=((.5-v)*32*this.aspect*spread+Math.sin(u*7+spread)*6)*(this.mobile?1.8:1.2);
+      const z=-6-random()*48;
+      centers.push(x,y,z);scales.push(12+random()*19,8+random()*16);
+      // Warm skin and cool eye highlights become the emission palette.
+      const cool=color[2]>color[0]*.95;
+      colors.push(color[0]*(cool?.58:1.25),color[1]*(cool?1.1:.82),color[2]*(cool?1.35:.83));seeds.push(random());
+      if(i<12){centers[centers.length-3]=(side*20)+(u-.5)*22;centers[centers.length-2]=y*1.1;centers[centers.length-1]=3+random()*8;}
+    }
+    const geometry=this.own(new THREE.InstancedBufferGeometry());
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute([-.5,-.5,0,.5,-.5,0,.5,.5,0,-.5,.5,0],3));
+    geometry.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,1,1,0,1],2));geometry.setIndex([0,1,2,0,2,3]);
+    geometry.setAttribute('aCenter',new THREE.InstancedBufferAttribute(new Float32Array(centers),3));geometry.setAttribute('aColor',new THREE.InstancedBufferAttribute(new Float32Array(colors),3));
+    geometry.setAttribute('aScale',new THREE.InstancedBufferAttribute(new Float32Array(scales),2));geometry.setAttribute('aSeed',new THREE.InstancedBufferAttribute(new Float32Array(seeds),1));geometry.instanceCount=count;
+    const material=this.own(new THREE.ShaderMaterial({uniforms:{...this.uniforms,uCloud:{value:texture}},vertexShader:cloudVertex,fragmentShader:cloudFragment,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
+    this.nebula=new THREE.Mesh(geometry,material);this.nebula.frustumCulled=false;this.nebula.renderOrder=0;this.scene.add(this.nebula);
   }
   resize(){
     const {width,height}=this.canvas.getBoundingClientRect();this.width=width;this.height=height;
@@ -134,7 +175,7 @@ export class IrisScene {
   samplePointer(){
     if(!this.ready)return false;this.ray.setFromCamera(this.pointer,this.camera);
     const intersection=this.ray.intersectObject(this.surface,false)[0];
-    if(intersection){const uv=intersection.uv;if((uv.x*2-1)**2+(uv.y*2-1)**2<1.05){this.pointerTarget.copy(intersection.point);this.hover=1;return true;}}
+    if(intersection){const uv=intersection.uv;if(Math.abs(uv.x*2-1)**8+Math.abs(uv.y*2-1)**12<1.05){this.pointerTarget.copy(intersection.point);this.hover=1;return true;}}
     this.hover=0;return false;
   }
   setMaterial(value){this.targetMaterial=clamp(value,0,2);this.invalidate();this.notify();}
