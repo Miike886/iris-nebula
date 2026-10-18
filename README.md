@@ -4,7 +4,7 @@ Experiencia artística local construida con Three.js y JavaScript. Una lente fot
 
 La nebulosa rodea la mirada con nubes a distintas profundidades, filamentos y polvo lejano. Sus colores proceden de la piel y los reflejos de los ojos. Las nubes responden a las ondas y a la iluminación local; al orbitar cambian sus superposiciones. El encuadre conserva las cejas disponibles en la fotografía y los bordes se dispersan sin una máscara ovalada que las recorte.
 
-El entorno tiene nubes oscuras y desaturadas para conservar el contraste de la mirada, con un campo de estrellas en profundidad. Una estrella discreta bajo la imagen reúne el nombre **Bere** y un pequeño corazón en puntos luminosos; vuelve a tocarla para dispersarlos.
+El entorno tiene nubes oscuras y desaturadas para conservar el contraste de la mirada, con un campo de estrellas en profundidad. El nombre **Berenice** y un pequeño corazón aparecen en puntos luminosos desde el primer fotograma. El botón Berenice o la estrella bajo la imagen permiten dispersarlos y reunirlos. Volver al origen restaura el nombre visible.
 
 ## Iniciar
 
@@ -27,14 +27,17 @@ La raíz debe contener **`Bajo la mirada cinemática.png`**. Es un recurso local
 | Acercar y alejar | Rueda o −/+ | Pellizco o −/+ |
 | Transformar un iris | Clic en uno de los dos puntos | Tocar uno de los dos puntos |
 | Mezclar materiales | Deslizador de materia | Deslizador de materia |
-| Revelar la foto localmente | Mantener pulsado y mover; o mantener V y usar flechas | Mantener un dedo y desplazarlo |
-| Reunir Bere y el corazón | Estrella ✧ o B | Tocar la estrella ✧ |
+| Revelar la foto localmente | Botón Revelar y mover el cursor; mantener pulsado; o V + flechas | Botón Revelar y arrastrar, o mantener un dedo y desplazarlo |
+| Lanzar una onda | Botón Onda o clic en la escena | Botón Onda o toque en la escena |
+| Mostrar Berenice y el corazón | Botón Berenice, estrella ✧ o B | Botón Berenice o estrella ✧ |
 | Restaurar cámara y materia | R o ↺ | ↺ |
 | Pausa | Botón superior o espacio | Botón superior |
 
 Para usar el teclado, enfocar la escena con un clic o Tab. El cursor ilumina y ondula la lente; un toque inicia una onda, también en el espacio entre las estrellas. Mantener pulsado durante 380 ms activa el revelado local; mover antes de ese tiempo conserva la órbita. Soltar o cancelar el gesto cierra el revelado, y añadir un segundo dedo vuelve al pellizco. El punto izquierdo dispersa materia y el derecho revela caracteres. Cada variación local vuelve a la materia seleccionada tras seis segundos de animación, o al tocar otra vez el mismo punto. En pausa permanece hasta cerrarla o restablecer la vista.
 
 El deslizador mezcla **imagen → partículas → ASCII**. El giro horizontal está limitado a ±70° y la inclinación a ±27.5°; el zoom queda entre 0.56 y 1.48 veces la distancia inicial. El amortiguamiento evita cambios bruscos y el encuadre se adapta al tamaño de pantalla sin perder el centro.
+
+El botón **Revelar** mantiene el revelado activo sin sostener la pulsación. Mientras está activo, mover el cursor o arrastrar un dedo explora la foto; desactívalo para volver a orbitar. El pellizco sigue controlando el zoom. **Onda** se desactiva durante la pausa para respetar la preferencia de movimiento. Los botones usan estados accesibles y objetivos táctiles de al menos 44 px de alto; la barra se distribuye en dos filas en pantallas estrechas.
 
 ## Movimiento y rendimiento
 

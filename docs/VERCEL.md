@@ -17,7 +17,7 @@ npm.cmd run preview:vercel
 
 `test:deploy` compila, genera `.vercel/output/` y abre un navegador automatizado contra ese paquete, únicamente en loopback. Para generar el paquete sin pruebas, usa `npm.cmd run prepare:vercel`.
 
-La vista previa manual está en **http://127.0.0.1:4173**. Comprueba el estado inicial, órbita, zoom, revelado al mantener pulsado, estrella de Bere y pausa.
+La vista previa manual está en **http://127.0.0.1:4173**. Comprueba Berenice visible desde el inicio, órbita, zoom, botones Revelar/Onda/Berenice, gestos y pausa.
 
 El paquete contiene 12 archivos estáticos: HTML, JavaScript, CSS, icono, Three.js y su licencia, y una copia de la foto. `.vercel/output/config.json` añade las rutas y cabeceras. Solo se empaquetan los archivos permitidos; un paquete anterior se reemplaza sin borrar `.vercel/project.json`.
 

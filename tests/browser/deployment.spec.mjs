@@ -8,8 +8,10 @@ test('prepared package serves the scene and Unicode image with deployment header
   expect(response.headers()['content-security-policy']).toContain("script-src 'self'");
   expect(response.headers()['cache-control']).toBe('public, max-age=0, must-revalidate');
   await expect(page.locator('body')).toHaveAttribute('data-renderer','webgl');
-  await page.locator('#signature').click();
-  await expect(page.locator('#signature')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#signature-toggle')).toHaveAttribute('aria-pressed','true');
+  await page.locator('#signature-toggle').click();
+  await expect(page.locator('#signature')).toHaveAttribute('aria-pressed','false');
+  await page.locator('#reveal').click();await expect(page.locator('#reveal')).toHaveAttribute('aria-pressed','true');
   const photo=await request.get(`/${encodeURIComponent('Bajo la mirada cinemática.png')}`);
   expect(photo.status()).toBe(200);expect(photo.headers()['content-type']).toContain('image/png');
   expect((await request.get('/vendor/three.module.js')).status()).toBe(200);

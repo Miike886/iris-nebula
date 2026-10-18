@@ -11,10 +11,11 @@ test('hold reveals the photo without orbiting; stars and signature respond to di
   expect((await state(page)).orbit).toEqual(start.orbit);expect((await detail(page)).pointer).not.toEqual(before.pointer);
   await page.screenshot({path:'test-results/desktop-reveal.png'});
   await page.mouse.up();await expect.poll(async()=>(await detail(page)).reveal).toBe(0);
-  await page.locator('#signature').click();await expect(page.locator('#signature')).toHaveAttribute('aria-pressed','true');await expect.poll(async()=>(await detail(page)).signature).toBe(1);
+  await page.locator('#signature').click();await expect(page.locator('#signature')).toHaveAttribute('aria-pressed','false');await expect.poll(async()=>(await detail(page)).signature).toBe(0);
+  await page.locator('#signature-toggle').click();await expect.poll(async()=>(await detail(page)).signature).toBe(1);
   await page.mouse.move(30,100);await page.screenshot({path:'test-results/desktop-signature.png'});
-  await page.locator('#reset').click();await expect.poll(async()=>(await detail(page)).signature).toBe(0);
-  await page.locator('#universe').focus();await page.keyboard.press('b');await expect(page.locator('#signature')).toHaveAttribute('aria-pressed','true');
+  await page.locator('#reset').click();await expect.poll(async()=>(await detail(page)).signature).toBe(1);
+  await page.locator('#universe').focus();await page.keyboard.press('b');await expect(page.locator('#signature')).toHaveAttribute('aria-pressed','false');
   await page.keyboard.down('v');await expect.poll(async()=>(await detail(page)).reveal).toBeGreaterThan(.95);
   const keyPointer=(await detail(page)).pointer;await page.keyboard.press('ArrowRight');await expect.poll(async()=>(await detail(page)).pointer[0]).toBeGreaterThan(keyPointer[0]+.5);expect((await state(page)).orbit).toEqual(start.orbit);
   await page.keyboard.up('v');await expect.poll(async()=>(await detail(page)).reveal).toBe(0);
@@ -32,6 +33,7 @@ test('touch hold cancels cleanly, second finger resumes zoom, and constellation 
   await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:140,y:420,id:1},{x:310,y:420,id:2}]});
   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await expect.poll(async()=>(await detail(page)).reveal).toBe(0);await expect.poll(async()=>(await state(page)).orbit.zoom).toBeLessThan(.7);
   await page.locator('#reset').tap();await expect.poll(async()=>(await state(page)).orbit.zoom).toBe(1);
+  await page.locator('#signature-toggle').tap();await expect.poll(async()=>(await detail(page)).signature).toBe(0);
   await page.locator('#signature').tap();await expect.poll(async()=>(await detail(page)).signature).toBe(1);await page.screenshot({path:'test-results/mobile-signature.png'});
   await context.close();
 });
@@ -40,6 +42,7 @@ test('desktop: recognizable initial image, bounded orbit, perspective and zoom',
   const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
   await ready(page);await page.screenshot({path:'test-results/desktop-start.png'});const start=await state(page);
   expect(start.material).toBe(1.35);await expect(page.locator('#matter')).toHaveValue('135');expect(start.calls).toBeLessThan(10);expect(start.centerDot).toBeCloseTo(1,5);
+  expect((await detail(page)).signature).toBe(1);await expect(page.locator('#signature-toggle')).toHaveAttribute('aria-pressed','true');
   await page.mouse.move(700,400);await page.mouse.down();await page.mouse.move(510,460,{steps:12});await page.mouse.up();
   await expect.poll(async()=>(await state(page)).orbit.yaw).toBeCloseTo(.89,2);
   const rotated=await state(page);expect(rotated.position.x).not.toBe(start.position.x);expect(rotated.radius).toBeCloseTo(start.radius,5);expect(rotated.centerDot).toBeCloseTo(1,5);
@@ -64,7 +67,10 @@ test('continuous materials and source-anchored local interactions',async({page})
 test('pause and reduced motion stop idle frames but retain direct controls',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});await ready(page);await expect(page.locator('#pause')).toHaveAttribute('aria-pressed','true');await expect.poll(async()=>(await state(page)).frame).toBe(0);
   const before=await state(page);expect(before.material).toBe(1.35);await page.waitForTimeout(100);expect((await state(page)).time).toBe(before.time);
-  await page.locator('#signature').click();await expect.poll(async()=>(await detail(page)).signature).toBe(1);await expect.poll(async()=>(await state(page)).frame).toBe(0);
+  await expect(page.locator('#wave')).toBeDisabled();
+  await page.locator('#signature').click();await expect.poll(async()=>(await detail(page)).signature).toBe(0);await expect.poll(async()=>(await state(page)).frame).toBe(0);
+  await page.locator('#reveal').click();await expect.poll(async()=>(await detail(page)).reveal).toBe(1);await expect.poll(async()=>(await state(page)).frame).toBe(0);
+  await page.locator('#reveal').click();await expect.poll(async()=>(await detail(page)).reveal).toBe(0);
   await page.locator('#universe').focus();await page.keyboard.down('v');await expect.poll(async()=>(await detail(page)).reveal).toBe(1);await page.keyboard.up('v');await expect.poll(async()=>(await detail(page)).reveal).toBe(0);
   await page.locator('#forward').click();await expect.poll(async()=>(await state(page)).orbit.zoom).toBe(.85);
   await page.locator('[data-focus="0"]').click();await expect.poll(async()=>(await state(page)).focusAmount).toBe(1);await expect.poll(async()=>(await state(page)).frame).toBe(0);
@@ -107,4 +113,25 @@ test('missing WebGL and context loss provide the local photographic fallback',as
   await ready(page);await page.evaluate(async()=>{const{scene}=await import('/src/app.js');scene.renderer.forceContextLoss();});await expect(page.locator('body')).toHaveAttribute('data-renderer','fallback');await expect(page.locator('.tools')).not.toBeVisible();
   await page.addInitScript(()=>{const original=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){return type.includes('webgl')?null:original.call(this,type,...args);};});
   await page.reload();await expect(page.locator('body')).toHaveAttribute('data-renderer','fallback');expect(await page.locator('#fallback img').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);await page.screenshot({path:'test-results/fallback.png'});
+});
+
+test('visible UI controls reveal, waves and Berenice on desktop and narrow touch screens',async({browser})=>{
+  for(const mobile of [false,true]){
+    const context=await browser.newContext({viewport:mobile?{width:320,height:740}:{width:1440,height:900},hasTouch:mobile,isMobile:mobile});
+    const page=await context.newPage();await ready(page);
+    const press=selector=>page.locator(selector)[mobile?'tap':'click']();
+    for(const id of ['reveal','wave','signature-toggle']){const button=page.locator(`#${id}`);await expect(button).toBeInViewport();const box=await button.boundingBox();expect(box.height).toBeGreaterThanOrEqual(44);}
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(mobile?320:1440);
+    expect((await detail(page)).signature).toBe(1);
+    await press('#reveal');await expect(page.locator('#reveal')).toHaveAttribute('aria-pressed','true');await expect.poll(async()=>(await detail(page)).reveal).toBe(1);
+    const before=await state(page);
+    if(mobile){await page.touchscreen.tap(190,365);}else{await page.mouse.move(700,420);await page.mouse.down();await page.mouse.move(800,430,{steps:5});await page.mouse.up();}
+    expect((await state(page)).orbit).toEqual(before.orbit);expect((await detail(page)).reveal).toBe(1);
+    await press('#reveal');await expect.poll(async()=>(await detail(page)).reveal).toBe(0);
+    const pulse=(await state(page)).pulse;await press('#wave');expect((await state(page)).pulse).toBeGreaterThan(pulse);
+    await press('#signature-toggle');await expect.poll(async()=>(await detail(page)).signature).toBe(0);await expect(page.locator('#signature')).toHaveAttribute('aria-pressed','false');
+    await press('#reset');await expect.poll(async()=>(await detail(page)).signature).toBe(1);await expect(page.locator('#reveal')).toHaveAttribute('aria-pressed','false');
+    await page.screenshot({path:`test-results/${mobile?'narrow-mobile':'desktop'}-ui.png`});
+    await context.close();
+  }
 });
