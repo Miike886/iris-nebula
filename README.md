@@ -58,3 +58,14 @@ Las pruebas de navegador usan una instancia aislada y sin interfaz de Microsoft 
 `build` genera `dist/` con Three.js y una copia local de la imagen. No publica ni transmite el resultado. El directorio completo se excluye de Git. Un clon nuevo necesita la fotografía original en la raíz antes de ejecutar o construir el sitio.
 
 El servidor de desarrollo escucha únicamente en loopback. La revisión móvil automatizada utiliza emulación de viewport y eventos táctiles reales del motor del navegador; no expone la fotografía en la red local.
+
+## Preparar Vercel
+
+```powershell
+npm.cmd run prepare:vercel
+npm.cmd run preview:vercel
+```
+
+Genera `.vercel/output/` y sirve el paquete local en http://127.0.0.1:4173, sin publicar nada. `npm.cmd run test:deploy` comprueba ese paquete en el navegador. La foto continúa excluida de Git; se incorpora una copia al paquete que posteriormente se subirá a Vercel. Usa el flujo precompilado, ya que GitHub no contiene la imagen.
+
+Pasos para vincular la cuenta, desplegar una vista previa y publicar: [docs/VERCEL.md](docs/VERCEL.md).
